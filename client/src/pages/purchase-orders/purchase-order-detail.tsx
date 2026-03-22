@@ -59,13 +59,14 @@ export default function PurchaseOrderDetailPage({
     notes: '',
   });
 
-  const { data: purchaseOrder, isLoading, error } = useQuery({
-    queryKey: ['/api/purchase-orders', id],
+  const { data: purchaseOrder, isLoading, error } = useQuery<any>({
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, id],
+    enabled: !!id && !!currentStoreId,
   });
 
   const { data: paymentsData } = useQuery<any[]>({
-    queryKey: ['/api/purchase-orders', id, 'payments'],
-    enabled: !!purchaseOrder?.isPrepaid,
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, id, 'payments'],
+    enabled: !!purchaseOrder?.isPrepaid && !!currentStoreId,
   });
 
   const { data: cashAccounts } = useQuery<CashAccount[]>({
@@ -409,10 +410,10 @@ export default function PurchaseOrderDetailPage({
   // Delete purchase order mutation
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('DELETE', `/api/purchase-orders/${id}`, undefined);
+      return apiRequest('DELETE', `/api/stores/${currentStoreId}/purchase-orders/${id}`, undefined);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`] });
       toast({
         title: "Purchase order deleted",
         description: "The purchase order has been deleted successfully.",
@@ -432,12 +433,12 @@ export default function PurchaseOrderDetailPage({
   // Create payment mutation
   const createPaymentMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('POST', `/api/purchase-orders/${id}/payments`, data);
+      return apiRequest('POST', `/api/stores/${currentStoreId}/purchase-orders/${id}/payments`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', id, 'payments'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', id] });
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, id, 'payments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`] });
       setPaymentDialogOpen(false);
       setPaymentForm({
         paymentDate: format(new Date(), 'yyyy-MM-dd'),
@@ -463,12 +464,12 @@ export default function PurchaseOrderDetailPage({
   // Delete payment mutation
   const deletePaymentMutation = useMutation({
     mutationFn: async (paymentId: number) => {
-      return apiRequest('DELETE', `/api/purchase-orders/${id}/payments/${paymentId}`, undefined);
+      return apiRequest('DELETE', `/api/stores/${currentStoreId}/purchase-orders/${id}/payments/${paymentId}`, undefined);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', id, 'payments'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', id] });
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, id, 'payments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`] });
       toast({
         title: "Success",
         description: "Payment deleted successfully.",

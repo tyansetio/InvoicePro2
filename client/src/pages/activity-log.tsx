@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
+import { useStore } from "@/lib/store-context";
 
 type ActivityLog = {
   id: number;
@@ -99,6 +100,8 @@ export default function ActivityLogPage() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
 
+  const { currentStoreId } = useStore();
+
   const { data: currentUser } = useQuery<User>({
     queryKey: ['/api/user'],
   });
@@ -117,9 +120,9 @@ export default function ActivityLogPage() {
   params.set("limit", String(PAGE_SIZE));
 
   const { data, isLoading } = useQuery<{ logs: ActivityLog[]; total: number }>({
-    queryKey: ['/api/activity-logs', filterUserId, filterAction, filterEntity, filterDateFrom, filterDateTo, page],
+    queryKey: [`/api/stores/${currentStoreId}/activity-logs`, filterUserId, filterAction, filterEntity, filterDateFrom, filterDateTo, page],
     queryFn: async () => {
-      const res = await fetch(`/api/activity-logs?${params.toString()}`, { credentials: 'include' });
+      const res = await fetch(`/api/stores/${currentStoreId}/activity-logs?${params.toString()}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch');
       return res.json();
     },

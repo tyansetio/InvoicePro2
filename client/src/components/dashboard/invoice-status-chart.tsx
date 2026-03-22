@@ -1,19 +1,20 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { useStore } from "@/lib/store-context";
 
 interface InvoiceStatusSummary {
   paid: number;
   pending: number;
   overdue: number;
-  total: number;
 }
 
 export function InvoiceStatusChart() {
+  const { currentStoreId } = useStore();
   const { data, isLoading, error } = useQuery<InvoiceStatusSummary>({
-    queryKey: ['/api/dashboard/invoice-status'],
+    queryKey: [`/api/stores/${currentStoreId}/dashboard/invoice-status`],
   });
 
   if (isLoading) {
@@ -54,14 +55,17 @@ export function InvoiceStatusChart() {
     );
   }
 
+  const total = (data.paid || 0) + (data.pending || 0) + (data.overdue || 0);
+
   const pieData = [
-    { name: 'Paid', value: data.paid, color: '#10B981' },
-    { name: 'Pending', value: data.pending, color: '#F59E0B' },
-    { name: 'Overdue', value: data.overdue, color: '#DC2626' },
+    { name: 'Paid', value: data.paid || 0, color: '#10B981' },
+    { name: 'Pending', value: data.pending || 0, color: '#F59E0B' },
+    { name: 'Overdue', value: data.overdue || 0, color: '#DC2626' },
   ];
 
   const calculatePercentage = (value: number) => {
-    return Math.round((value / data.total) * 100);
+    if (total === 0) return 0;
+    return Math.round((value / total) * 100);
   };
 
   return (
@@ -92,7 +96,7 @@ export function InvoiceStatusChart() {
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <p className="text-2xl font-bold text-gray-700">{data.total}</p>
+              <p className="text-2xl font-bold text-gray-700">{total}</p>
               <p className="text-sm text-gray-500">Total</p>
             </div>
           </div>

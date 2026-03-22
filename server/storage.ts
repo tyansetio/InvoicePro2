@@ -90,19 +90,20 @@ export interface IStorage {
 
   // Category methods
   getCategory(id: number): Promise<Category | undefined>;
-  getCategories(): Promise<Category[]>;
+  getCategories(storeId: number): Promise<Category[]>;
   createCategory(category: InsertCategory): Promise<Category>;
   updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category>;
   deleteCategory(id: number): Promise<void>;
 
   // Product methods
   getProduct(id: number): Promise<Product | undefined>;
-  getProductBySku(sku: string): Promise<Product | undefined>;
-  getProducts(storeId?: number): Promise<Product[]>;
+  getProductBySku(sku: string, storeId: number): Promise<Product | undefined>;
+  getProducts(storeId: number): Promise<Product[]>;
   getProductsWithLowStock(storeId: number): Promise<Product[]>;
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: number, product: Partial<InsertProduct>): Promise<Product>;
   deleteProduct(id: number): Promise<void>;
+  deleteProducts(ids: number[]): Promise<void>;
 
   // Product dashboard methods
   getProductStats(productId: number): Promise<ProductStats>;
@@ -178,7 +179,7 @@ export interface IStorage {
   
   // Self pickup stock deduction (when self_pickup invoice is paid)
   deductStockForSelfPickup(invoiceId: number): Promise<void>;
-  returnStockFromSelfPickup(invoiceId: number): Promise<void>;
+  returnStockFromSelfPickup(invoiceId: number, tx?: any): Promise<void>;
 
   // Purchase order payment methods (for prepaid POs)
   getPurchaseOrderPayment(paymentId: number): Promise<PurchaseOrderPayment | undefined>;
@@ -201,7 +202,7 @@ export interface IStorage {
   getNextDeliveryNoteNumber(deliveryDate?: Date, invoiceId?: number, dnItemCount?: number): Promise<string>;
   allocateStockOnDelivery(deliveryNoteId: number): Promise<void>;
   reverseDeliveryNoteStock(deliveryNoteId: number): Promise<void>;
-  restorePendingDeliveryNoteStock(deliveryNoteId: number): Promise<void>;
+  restorePendingDeliveryNoteStock(deliveryNoteId: number, tx?: any): Promise<void>;
   revertDeliveryNoteToPending(deliveryNoteId: number): Promise<DeliveryNote>;
   updateDeliveryNoteItems(deliveryNoteId: number, items: { invoiceItemId: number; deliveredQuantity: number }[]): Promise<void>;
 
@@ -332,7 +333,7 @@ export interface IStorage {
 
   // Import/Export methods
   createImportExportLog(log: InsertImportExportLog): Promise<ImportExportLog>;
-  getImportExportLogs(userId: number): Promise<ImportExportLog[]>;
+  getImportExportLogs(storeId: number): Promise<ImportExportLog[]>;
 
   // Goods Receipt methods
   getGoodsReceipt(id: number): Promise<GoodsReceipt | undefined>;
@@ -343,7 +344,7 @@ export interface IStorage {
   updateGoodsReceipt(id: number, goodsReceipt: Partial<InsertGoodsReceipt>, items?: Array<InsertGoodsReceiptItem & { id?: number, productId: number }>): Promise<GoodsReceipt>;
   updateGoodsReceiptStatus(id: number, status: string): Promise<GoodsReceipt>;
   deleteGoodsReceipt(id: number): Promise<void>;
-  getNextGoodsReceiptNumber(receiptDate?: Date): Promise<string>;
+  getNextGoodsReceiptNumber(storeId: number, receiptDate?: Date): Promise<string>;
 
   // Goods Receipt Item methods
   updateGoodsReceiptItem(id: number, item: Partial<InsertGoodsReceiptItem>): Promise<GoodsReceiptItem>;
@@ -584,13 +585,19 @@ export type BundleComponentSales = {
 };
 
 // Helper function to generate unique numbers with retry logic for concurrency
-async function generateNextNumber(prefix: string, yearMonth: string, table: any, column: any, tx: any): Promise<string> {
+async function generateNextNumber(prefix: string, yearMonth: string, table: any, column: any, tx: any, storeId?: number): Promise<string> {
   // Find the highest number for this year-month using the transaction
   const yearMonthPrefix = `${prefix}-${yearMonth}-`;
+  
+  const conditions = [sql`${column} LIKE ${yearMonthPrefix + '%'}`];
+  if (storeId !== undefined) {
+    conditions.push(eq(table.storeId, storeId));
+  }
+
   const result = await tx
     .select({ number: column })
     .from(table)
-    .where(sql`${column} LIKE ${yearMonthPrefix + '%'}`)
+    .where(and(...conditions))
     .orderBy(sql`${column} DESC`)
     .limit(1);
 
@@ -991,8 +998,8 @@ export class DatabaseStorage implements IStorage {
     return category;
   }
 
-  async getCategories(): Promise<Category[]> {
-    return db.select().from(categories).orderBy(categories.name);
+  async getCategories(storeId: number): Promise<Category[]> {
+    return db.select().from(categories).where(eq(categories.storeId, storeId)).orderBy(categories.name);
   }
 
   async createCategory(category: InsertCategory): Promise<Category> {
@@ -1019,41 +1026,34 @@ export class DatabaseStorage implements IStorage {
     return product;
   }
 
-  async getProductBySku(sku: string): Promise<Product | undefined> {
-    const [product] = await db.select().from(products).where(eq(products.sku, sku));
+  async getProductBySku(sku: string, storeId: number): Promise<Product | undefined> {
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(and(eq(products.sku, sku), eq(products.storeId, storeId)));
     return product;
   }
 
-  async getProducts(storeId?: number): Promise<Product[]> {
-    const query = db.select().from(products);
-
-    // If storeId is provided, we filter only products that have batches in the specified store
-    if (storeId) {
-      const productsInStore = await db.execute(sql`
-        SELECT DISTINCT p.*
-        FROM ${products} p
-        JOIN ${productBatches} pb ON p.id = pb.product_id
-        WHERE pb.store_id = ${storeId}
-        ORDER BY p.name
-      `);
-      return productsInStore;
-    }
-
-    return query.orderBy(products.name);
+  async getProducts(storeId: number): Promise<Product[]> {
+    return db
+      .select()
+      .from(products)
+      .where(eq(products.storeId, storeId))
+      .orderBy(products.name);
   }
 
   async getProductsWithLowStock(storeId: number): Promise<Product[]> {
     const lowStockProducts = await db.execute(sql`
       SELECT p.*, 
-             SUM(pb.remaining_quantity) as total_quantity
-      FROM ${products} p
-      JOIN ${productBatches} pb ON p.id = pb.product_id
-      WHERE pb.store_id = ${storeId} AND p.is_active = true
+             COALESCE(SUM(pb.remaining_quantity), 0) as total_quantity
+      FROM ${sql.identifier('products')} p
+      LEFT JOIN ${sql.identifier('product_batches')} pb ON p.id = pb.product_id AND pb.store_id = ${storeId}
+      WHERE p.store_id = ${storeId} AND p.is_active = true
       GROUP BY p.id
-      HAVING SUM(pb.remaining_quantity) <= p.min_stock
+      HAVING COALESCE(SUM(pb.remaining_quantity), 0) <= p.min_stock
       ORDER BY p.name
     `);
-    return lowStockProducts;
+    return lowStockProducts as any;
   }
 
   async createProduct(productData: InsertProduct): Promise<Product> {
@@ -1072,6 +1072,11 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProduct(id: number): Promise<void> {
     await db.delete(products).where(eq(products.id, id));
+  }
+
+  async deleteProducts(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(products).where(inArray(products.id, ids));
   }
 
   // Product dashboard methods
@@ -1093,7 +1098,7 @@ export class DatabaseStorage implements IStorage {
         COUNT(*) as sales_count
       FROM ${invoiceItems} ii
       JOIN ${invoices} i ON ii.invoice_id = i.id
-      WHERE ii.product_id = ${productId} AND i.status != 'draft'
+      WHERE ii.product_id = ${productId} AND i.status NOT IN ('draft', 'void', 'cancelled')
     `);
 
     const totalSales = parseInt(salesResult[0]?.total_sales?.toString() || '0');
@@ -1120,7 +1125,7 @@ export class DatabaseStorage implements IStorage {
         COALESCE(SUM(CAST(ii.quantity AS DECIMAL)), 0) as total_qty
       FROM ${invoiceItems} ii
       JOIN ${invoices} i ON ii.invoice_id = i.id
-      WHERE ii.product_id = ${productId} AND i.status != 'draft'
+      WHERE ii.product_id = ${productId} AND i.status NOT IN ('draft', 'void', 'cancelled')
         AND i.issue_date IS NOT NULL
     `);
     const monthCount = parseInt(monthlyResult[0]?.month_count?.toString() || '1') || 1;
@@ -1145,7 +1150,7 @@ export class DatabaseStorage implements IStorage {
       SELECT COUNT(*) as total
       FROM ${invoiceItems} ii
       JOIN ${invoices} i ON ii.invoice_id = i.id
-      WHERE ii.product_id = ${productId} AND i.status != 'draft'
+      WHERE ii.product_id = ${productId} AND i.status NOT IN ('draft', 'void', 'cancelled')
     `);
     const total = parseInt((countResult[0] as any)?.total?.toString() || '0');
 
@@ -1163,7 +1168,7 @@ export class DatabaseStorage implements IStorage {
       FROM ${invoiceItems} ii
       JOIN ${invoices} i ON ii.invoice_id = i.id
       LEFT JOIN ${clients} c ON i.client_id = c.id
-      WHERE ii.product_id = ${productId} AND i.status != 'draft'
+      WHERE ii.product_id = ${productId} AND i.status NOT IN ('draft', 'void', 'cancelled')
       ORDER BY i.issue_date DESC
     `;
 
@@ -2058,26 +2063,56 @@ export class DatabaseStorage implements IStorage {
   }
 
   async voidInvoice(id: number): Promise<Invoice> {
-    const [invoice] = await db
-      .select()
-      .from(invoices)
-      .where(eq(invoices.id, id));
+    return withTransaction(async (tx) => {
+      const [invoice] = await tx
+        .select()
+        .from(invoices)
+        .where(eq(invoices.id, id));
 
-    if (!invoice) {
-      throw new Error(`Invoice with ID ${id} not found`);
-    }
+      if (!invoice) {
+        throw new Error(`Invoice with ID ${id} not found`);
+      }
 
-    const [updatedInvoice] = await db
-      .update(invoices)
-      .set({ 
-        isVoided: true,
-        status: 'void' as any,
-        updatedAt: new Date()
-      })
-      .where(eq(invoices.id, id))
-      .returning();
+      // 1. Restore stock if self_pickup
+      if (invoice.deliveryType === 'self_pickup') {
+        // This handles both stock return and profit data reset
+        await this.returnStockFromSelfPickup(id, tx);
+      }
 
-    return updatedInvoice;
+      // 2. Restore stock for all delivery notes
+      const dns = await tx
+        .select()
+        .from(deliveryNotes)
+        .where(
+          and(
+            eq(deliveryNotes.invoiceId, id),
+            not(eq(deliveryNotes.status, 'cancelled'))
+          )
+        );
+
+      for (const dn of dns) {
+        // This restores stock to batches and resets DN profit data
+        await this.restorePendingDeliveryNoteStock(dn.id, tx);
+        // Mark DN as cancelled
+        await tx
+          .update(deliveryNotes)
+          .set({ status: 'cancelled', updatedAt: new Date() })
+          .where(eq(deliveryNotes.id, dn.id));
+      }
+
+      // 3. Void the invoice
+      const [updatedInvoice] = await tx
+        .update(invoices)
+        .set({ 
+          isVoided: true,
+          status: 'void' as any,
+          updatedAt: new Date()
+        })
+        .where(eq(invoices.id, id))
+        .returning();
+
+      return updatedInvoice;
+    });
   }
 
   async deleteInvoice(id: number): Promise<void> {
@@ -2481,15 +2516,15 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async returnStockFromSelfPickup(invoiceId: number): Promise<void> {
-    return withTransaction(async (tx) => {
+  async returnStockFromSelfPickup(invoiceId: number, tx?: any): Promise<void> {
+    const action = async (transaction: any) => {
       // Get the invoice
-      const [invoice] = await tx.select().from(invoices).where(eq(invoices.id, invoiceId));
+      const [invoice] = await transaction.select().from(invoices).where(eq(invoices.id, invoiceId));
       if (!invoice) {
         throw new Error(`Invoice with ID ${invoiceId} not found`);
       }
 
-      const items = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+      const items = await transaction.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
 
       // For each item, return stock by creating adjustment batches (similar to returns)
       for (const item of items) {
@@ -2499,7 +2534,7 @@ export class DatabaseStorage implements IStorage {
         const unitCost = parseFloat(item.unitCost?.toString() || '0');
 
         // Create a new batch for the returned stock
-        await tx.insert(productBatches).values({
+        await transaction.insert(productBatches).values({
           productId: item.productId,
           storeId: invoice.storeId,
           batchNumber: `PICKUP-RETURN-INV-${invoice.invoiceNumber}`,
@@ -2511,7 +2546,7 @@ export class DatabaseStorage implements IStorage {
       }
 
       // Reset invoice profit data
-      await tx
+      await transaction
         .update(invoices)
         .set({
           totalCost: '0',
@@ -2519,7 +2554,10 @@ export class DatabaseStorage implements IStorage {
           updatedAt: new Date()
         })
         .where(eq(invoices.id, invoiceId));
-    });
+    };
+
+    if (tx) return action(tx);
+    return withTransaction(action);
   }
 
   // Purchase order payment methods (for prepaid POs)
@@ -3275,9 +3313,9 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async restorePendingDeliveryNoteStock(deliveryNoteId: number): Promise<void> {
-    return withTransaction(async (tx) => {
-      const [deliveryNote] = await tx.select().from(deliveryNotes).where(eq(deliveryNotes.id, deliveryNoteId));
+  async restorePendingDeliveryNoteStock(deliveryNoteId: number, tx?: any): Promise<void> {
+    const action = async (transaction: any) => {
+      const [deliveryNote] = await transaction.select().from(deliveryNotes).where(eq(deliveryNotes.id, deliveryNoteId));
       if (!deliveryNote) {
         throw new Error(`Delivery note with ID ${deliveryNoteId} not found`);
       }
@@ -3286,15 +3324,15 @@ export class DatabaseStorage implements IStorage {
         return;
       }
 
-      const dnItems = await tx.select().from(deliveryNoteItems).where(eq(deliveryNoteItems.deliveryNoteId, deliveryNoteId));
+      const dnItems = await transaction.select().from(deliveryNoteItems).where(eq(deliveryNoteItems.deliveryNoteId, deliveryNoteId));
 
-      const [invoice] = await tx.select().from(invoices).where(eq(invoices.id, deliveryNote.invoiceId));
+      const [invoice] = await transaction.select().from(invoices).where(eq(invoices.id, deliveryNote.invoiceId));
       if (!invoice) {
         throw new Error(`Invoice with ID ${deliveryNote.invoiceId} not found`);
       }
 
       for (const dnItem of dnItems) {
-        const [invItem] = await tx.select().from(invoiceItems).where(eq(invoiceItems.id, dnItem.invoiceItemId));
+        const [invItem] = await transaction.select().from(invoiceItems).where(eq(invoiceItems.id, dnItem.invoiceItemId));
         if (!invItem) continue;
 
         const deliveredQty = parseFloat(dnItem.deliveredQuantity.toString());
@@ -3305,11 +3343,11 @@ export class DatabaseStorage implements IStorage {
           baseDeliveredQty = deliveredQty * ratio;
         }
 
-        const [product] = await tx.select().from(products).where(eq(products.id, invItem.productId));
+        const [product] = await transaction.select().from(products).where(eq(products.id, invItem.productId));
 
         let stockItems: { productId: number; quantity: number }[] = [];
         if (product && product.productType === 'bundle') {
-          const components = await tx
+          const components = await transaction
             .select()
             .from(productBundleComponents)
             .where(eq(productBundleComponents.bundleProductId, product.id));
@@ -3324,7 +3362,7 @@ export class DatabaseStorage implements IStorage {
         }
 
         for (const { productId: stockProductId, quantity: qtyToRestore } of stockItems) {
-          const batches = await tx
+          const batches = await transaction
             .select()
             .from(productBatches)
             .where(
@@ -3347,7 +3385,7 @@ export class DatabaseStorage implements IStorage {
             const canRestore = Math.min(remainingToRestore, totalQty - remainingQty);
 
             if (canRestore > 0) {
-              await tx
+              await transaction
                 .update(productBatches)
                 .set({
                   remainingQuantity: (remainingQty + canRestore).toString(),
@@ -3362,7 +3400,7 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      await tx
+      await transaction
         .update(deliveryNotes)
         .set({
           totalCost: null,
@@ -3371,7 +3409,7 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(deliveryNotes.id, deliveryNoteId));
 
-      const remainingDeliveredNotes = await tx
+      const remainingDeliveredNotes = await transaction
         .select()
         .from(deliveryNotes)
         .where(
@@ -3383,11 +3421,14 @@ export class DatabaseStorage implements IStorage {
       const newInvoiceProfit = remainingDeliveredNotes.reduce((sum, dn) => {
         return sum + parseFloat(dn.profit?.toString() || '0');
       }, 0);
-      await tx
+      await transaction
         .update(invoices)
         .set({ totalProfit: newInvoiceProfit.toString(), updatedAt: new Date() })
         .where(eq(invoices.id, deliveryNote.invoiceId));
-    });
+    };
+
+    if (tx) return action(tx);
+    return withTransaction(action);
   }
 
   async revertDeliveryNoteToPending(deliveryNoteId: number): Promise<DeliveryNote> {
@@ -3962,12 +4003,12 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getNextGoodsReceiptNumber(receiptDate?: Date): Promise<string> {
+  async getNextGoodsReceiptNumber(storeId: number, receiptDate?: Date): Promise<string> {
     const date = receiptDate || new Date();
     const year = date.getFullYear().toString().slice(-2);
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const yearMonth = year + month;
-    return generateNextNumber("GR", yearMonth, goodsReceipts, goodsReceipts.receiptNumber, db);
+    return generateNextNumber("GR", yearMonth, goodsReceipts, goodsReceipts.receiptNumber, db, storeId);
   }
 
   async updateGoodsReceiptItem(id: number, itemData: Partial<InsertGoodsReceiptItem>): Promise<GoodsReceiptItem> {
@@ -5509,11 +5550,11 @@ export class DatabaseStorage implements IStorage {
     return newLog;
   }
 
-  async getImportExportLogs(userId: number): Promise<ImportExportLog[]> {
+  async getImportExportLogs(storeId: number): Promise<ImportExportLog[]> {
     return db
       .select()
       .from(importExportLogs)
-      .where(eq(importExportLogs.userId, userId))
+      .where(eq(importExportLogs.storeId, storeId))
       .orderBy(desc(importExportLogs.completedAt));
   }
 
@@ -5538,13 +5579,13 @@ export class DatabaseStorage implements IStorage {
     // Calculate total revenue and expenses
     const revenueResult = await db.execute(sql`
       SELECT COALESCE(SUM(amount::numeric), 0) as total
-      FROM ${transactions}
+      FROM ${sql.identifier('transactions')}
       WHERE store_id = ${storeId} AND type = 'income'
     `);
 
     const expensesResult = await db.execute(sql`
       SELECT COALESCE(SUM(amount::numeric), 0) as total
-      FROM ${transactions}
+      FROM ${sql.identifier('transactions')}
       WHERE store_id = ${storeId} AND type = 'expense'
     `);
 
@@ -5564,22 +5605,24 @@ export class DatabaseStorage implements IStorage {
       WHERE store_id = ${storeId}
     `);
 
-    // Count products
+    // Count products belonging to this store
     const productsResult = await db.execute(sql`
-      SELECT COUNT(DISTINCT p.id) as count
-      FROM ${products} p
-      JOIN ${productBatches} pb ON p.id = pb.product_id
-      WHERE pb.store_id = ${storeId} AND p.is_active = true
+      SELECT COUNT(*) as count
+      FROM ${products}
+      WHERE store_id = ${storeId} AND is_active = true
     `);
 
-    // Count products with low stock
+    // Count products with low stock (summing batches per store)
     const lowStockResult = await db.execute(sql`
-      SELECT COUNT(DISTINCT p.id) as count
-      FROM ${products} p
-      JOIN ${productBatches} pb ON p.id = pb.product_id
-      WHERE pb.store_id = ${storeId} AND p.is_active = true
-      GROUP BY p.id
-      HAVING SUM(pb.remaining_quantity::numeric) <= p.min_stock
+      SELECT COUNT(*) as count
+      FROM (
+        SELECT p.id
+        FROM ${products} p
+        LEFT JOIN ${productBatches} pb ON p.id = pb.product_id AND pb.store_id = ${storeId}
+        WHERE p.store_id = ${storeId} AND p.is_active = true
+        GROUP BY p.id
+        HAVING COALESCE(SUM(pb.remaining_quantity::numeric), 0) <= p.min_stock
+      ) as low_stock_products
     `);
 
     // Count sales by periods
@@ -5703,10 +5746,10 @@ export class DatabaseStorage implements IStorage {
         COALESCE(SUM(ii.total_amount::numeric), 0) as total_revenue,
         COALESCE(SUM(ii.quantity::numeric), 0) as total_quantity,
         COUNT(DISTINCT p.id) as product_count
-      FROM ${categories} c
-      INNER JOIN ${products} p ON c.id = p.category_id
-      INNER JOIN ${invoiceItems} ii ON p.id = ii.product_id
-      INNER JOIN ${invoices} i ON ii.invoice_id = i.id
+      FROM ${sql.identifier('categories')} c
+      INNER JOIN ${sql.identifier('products')} p ON c.id = p.category_id
+      INNER JOIN ${sql.identifier('invoice_items')} ii ON p.id = ii.product_id
+      INNER JOIN ${sql.identifier('invoices')} i ON ii.invoice_id = i.id
       WHERE i.store_id = ${storeId} AND i.status = 'paid'
       GROUP BY c.id, c.name
       HAVING COALESCE(SUM(ii.total_amount::numeric), 0) > 0
@@ -5719,9 +5762,9 @@ export class DatabaseStorage implements IStorage {
         COALESCE(SUM(ii.total_amount::numeric), 0) as total_revenue,
         COALESCE(SUM(ii.quantity::numeric), 0) as total_quantity,
         COUNT(DISTINCT p.id) as product_count
-      FROM ${products} p
-      INNER JOIN ${invoiceItems} ii ON p.id = ii.product_id
-      INNER JOIN ${invoices} i ON ii.invoice_id = i.id
+      FROM ${sql.identifier('products')} p
+      INNER JOIN ${sql.identifier('invoice_items')} ii ON p.id = ii.product_id
+      INNER JOIN ${sql.identifier('invoices')} i ON ii.invoice_id = i.id
       WHERE p.category_id IS NULL AND i.store_id = ${storeId} AND i.status = 'paid'
       GROUP BY p.category_id
       HAVING COALESCE(SUM(ii.total_amount::numeric), 0) > 0
@@ -5813,9 +5856,9 @@ export class DatabaseStorage implements IStorage {
           SUM(ii.quantity::numeric) as total_sold,
           SUM(ii.total_amount::numeric) as total_revenue,
           SUM(ii.profit::numeric) as total_profit
-        FROM ${products} p
-        JOIN ${invoiceItems} ii ON p.id = ii.product_id
-        JOIN ${invoices} i ON ii.invoice_id = i.id
+        FROM ${sql.identifier('products')} p
+        JOIN ${sql.identifier('invoice_items')} ii ON p.id = ii.product_id
+        JOIN ${sql.identifier('invoices')} i ON ii.invoice_id = i.id
         WHERE i.store_id = ${storeId} AND i.status = 'paid'
         GROUP BY p.id, p.name, p.sku
       )
@@ -5858,8 +5901,8 @@ export class DatabaseStorage implements IStorage {
           THEN SUM(pb.remaining_quantity::numeric * pb.capital_cost::numeric) / SUM(pb.remaining_quantity::numeric)
           ELSE 0 
         END as average_cost
-      FROM ${productBatches} pb
-      JOIN ${products} p ON pb.product_id = p.id
+      FROM ${sql.identifier('product_batches')} pb
+      JOIN ${sql.identifier('products')} p ON pb.product_id = p.id
       WHERE pb.store_id = ${storeId} AND pb.remaining_quantity::numeric > 0
     `);
 
@@ -5868,9 +5911,9 @@ export class DatabaseStorage implements IStorage {
       SELECT 
         COALESCE(c.name, 'Uncategorized') as category,
         COALESCE(SUM(pb.remaining_quantity::numeric * pb.capital_cost::numeric), 0) as value
-      FROM ${productBatches} pb
-      JOIN ${products} p ON pb.product_id = p.id
-      LEFT JOIN ${categories} c ON p.category_id = c.id
+      FROM ${sql.identifier('product_batches')} pb
+      JOIN ${sql.identifier('products')} p ON pb.product_id = p.id
+      LEFT JOIN ${sql.identifier('categories')} c ON p.category_id = c.id
       WHERE pb.store_id = ${storeId} AND pb.remaining_quantity::numeric > 0
       GROUP BY c.name
       ORDER BY value DESC
@@ -6400,7 +6443,7 @@ export class DatabaseStorage implements IStorage {
         ), 0) as realized_revenue,
         COALESCE(SUM(total_cost::numeric), 0) as realized_cost,
         COALESCE(SUM(profit::numeric), 0) as realized_profit
-      FROM ${deliveryNotes} dn
+      FROM ${sql.identifier('delivery_notes')} dn
       WHERE dn.store_id = ${storeId}
         AND dn.status = 'delivered'
         AND dn.delivery_date >= ${start.toISOString().split('T')[0]}
@@ -7064,13 +7107,12 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async getActivityLogs(filters?: { storeId?: number; userId?: number; action?: string; entity?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }): Promise<{ logs: ActivityLog[]; total: number }> {
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 50;
+  async getActivityLogs(filters: { storeId: number; userId?: number; action?: string; entity?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }): Promise<{ logs: ActivityLog[]; total: number }> {
+    const page = filters.page || 1;
+    const limit = filters.limit || 50;
     const offset = (page - 1) * limit;
 
-    const conditions: any[] = [];
-    if (filters?.storeId) conditions.push(eq(activityLogs.storeId, filters.storeId));
+    const conditions: any[] = [eq(activityLogs.storeId, filters.storeId)];
     if (filters?.userId) conditions.push(eq(activityLogs.userId, filters.userId));
     if (filters?.action) conditions.push(eq(activityLogs.action, filters.action));
     if (filters?.entity) conditions.push(eq(activityLogs.entity, filters.entity));

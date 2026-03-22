@@ -37,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useStore } from "@/lib/store-context";
 
 type GoodsReceipt = {
   id: number;
@@ -59,18 +60,19 @@ export default function GoodsReceiptsPage() {
   const [statusFilter, setStatusFilter] = useState<GoodsReceiptStatus>("all");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { currentStoreId } = useStore();
   
   const { data: goodsReceipts, isLoading } = useQuery<GoodsReceipt[]>({
-    queryKey: ['/api/goods-receipts'],
+    queryKey: [`/api/stores/${currentStoreId}/goods-receipts`],
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest('DELETE', `/api/goods-receipts/${id}`, undefined);
+      return apiRequest('DELETE', `/api/stores/${currentStoreId}/goods-receipts/${id}`, undefined);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/goods-receipts'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`] });
       toast({
         title: "Goods receipt deleted",
         description: "The goods receipt has been deleted successfully.",

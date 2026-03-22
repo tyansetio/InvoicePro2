@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Edit, Trash2, MoreHorizontal, Package, Download, Upload, FileSpreadsheet, BarChart3, Layers, Scale, ArrowUpDown } from "lucide-react";
 import * as XLSX from 'xlsx';
 import { StockAdjustmentDialog } from "@/components/products/stock-adjustment-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type UserData = {
   id: number;
@@ -124,8 +125,8 @@ const productSchema = z.object({
   sku: z.string().min(1, "SKU is required"),
   description: z.string().optional(),
   currentSellingPrice: z.string().min(1, "Price is required"),
-  costPrice: z.string().transform(val => val === "" ? undefined : val).optional(),
-  lowestPrice: z.string().transform(val => val === "" ? undefined : val).optional(),
+  costPrice: z.string().transform((val: string) => val === "" ? undefined : val).optional(),
+  lowestPrice: z.string().transform((val: string) => val === "" ? undefined : val).optional(),
   productType: z.enum(["standard", "bundle"]).optional().default("standard"),
   baseUnit: z.string().optional(),
   minStock: z.coerce.number().min(0).optional().default(0),
@@ -164,6 +165,7 @@ export default function ProductsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set());
   
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: [`/api/stores/${currentStoreId}/products/stock`],
@@ -236,6 +238,31 @@ export default function ProductsPage() {
       });
     }
   });
+  
+  // Bulk delete products mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      return apiRequest('DELETE', '/api/products/bulk', { ids });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/products/stock`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/products'] });
+      setSelectedProducts(new Set());
+      toast({
+        title: "Products deleted",
+        description: "The selected products have been deleted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: `Failed to delete products: ${error.message}`,
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Export products mutation
 
   // Export products mutation
   const exportMutation = useMutation({
@@ -608,6 +635,24 @@ export default function ProductsPage() {
     }
   };
   
+  const toggleProduct = (productId: number) => {
+    const newSelected = new Set(selectedProducts);
+    if (newSelected.has(productId)) {
+      newSelected.delete(productId);
+    } else {
+      newSelected.add(productId);
+    }
+    setSelectedProducts(newSelected);
+  };
+
+  const toggleAll = () => {
+    if (selectedProducts.size === (products?.length || 0)) {
+      setSelectedProducts(new Set());
+    } else {
+      setSelectedProducts(new Set(products?.map((p: any) => p.id)));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -616,7 +661,35 @@ export default function ProductsPage() {
           <p className="text-sm text-gray-500 mt-1">Manage your products and services for invoices</p>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {selectedProducts.size > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Selected ({selectedProducts.size})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete {selectedProducts.size} selected products. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={() => bulkDeleteMutation.mutate(Array.from(selectedProducts))}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+
           {hasPermission('products.export') && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -759,6 +832,12 @@ export default function ProductsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[50px]">
+                      <Checkbox 
+                        checked={products && products.length > 0 && selectedProducts.size === products.length}
+                        onCheckedChange={() => toggleAll()}
+                      />
+                    </TableHead>
                     <TableHead className="w-[300px] cursor-pointer select-none" onClick={() => setNameSort(prev => prev === "none" ? "asc" : prev === "asc" ? "desc" : "none")}>
                       <div className="flex items-center gap-1">
                         Name
@@ -786,6 +865,13 @@ export default function ProductsPage() {
                       onDoubleClick={() => handleEdit(product)}
                       data-testid={`row-product-${product.id}`}
                     >
+                      <TableCell>
+                        <Checkbox 
+                          checked={selectedProducts.has(product.id)}
+                          onCheckedChange={() => toggleProduct(product.id)}
+                          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           {product.name}

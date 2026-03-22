@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
+import { useStore } from "@/lib/store-context";
 
 interface CategorySalesData {
   categoryId: number | null;
@@ -24,8 +25,9 @@ const COLORS = [
 ];
 
 export function CategorySalesChart() {
+  const { currentStoreId } = useStore();
   const { data, isLoading, error } = useQuery<CategorySalesData[]>({
-    queryKey: ['/api/dashboard/category-sales'],
+    queryKey: [`/api/stores/${currentStoreId}/dashboard/category-sales`],
   });
 
   if (isLoading) {

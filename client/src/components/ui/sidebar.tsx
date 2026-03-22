@@ -27,7 +27,14 @@ import {
   Store,
   Briefcase,
   History,
+  ShieldCheck,
+  UserPlus,
+  Building,
+  Plus,
 } from "lucide-react";
+import { UserManagement } from "@/components/user-management";
+import { StoreManagement } from "@/components/store-management";
+import { RoleManagement } from "@/components/role-management";
 import { apiRequest } from "@/lib/queryClient";
 import { useStore } from "@/lib/store-context";
 import { useToast } from "@/hooks/use-toast";
@@ -92,6 +99,9 @@ export function Sidebar({ user, open, onToggle, mobileView }: SidebarProps) {
   const [editFullName, setEditFullName] = useState(user.fullName || "");
   const [editEmail, setEditEmail] = useState(user.email || "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [usersOpen, setUsersOpen] = useState(false);
+  const [rolesOpen, setRolesOpen] = useState(false);
+  const [storesManageOpen, setStoresManageOpen] = useState(false);
 
   const isActive = (path: string) => {
     return location === path;
@@ -517,6 +527,11 @@ export function Sidebar({ user, open, onToggle, mobileView }: SidebarProps) {
                       {store.name}
                     </DropdownMenuItem>
                   ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setStoresManageOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Tambah Cabang
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
@@ -551,6 +566,23 @@ export function Sidebar({ user, open, onToggle, mobileView }: SidebarProps) {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="top" className="w-56">
+                {isOwner && (
+                  <>
+                    <DropdownMenuItem onClick={() => setUsersOpen(true)}>
+                      <Users className="h-4 w-4 mr-2" />
+                      Manajemen User
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setRolesOpen(true)}>
+                      <ShieldCheck className="h-4 w-4 mr-2" />
+                      Manajemen Role
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setStoresManageOpen(true)}>
+                      <Building className="h-4 w-4 mr-2" />
+                      Manajemen Cabang
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                   <User className="h-4 w-4 mr-2" />
                   Profil Saya
@@ -677,6 +709,33 @@ export function Sidebar({ user, open, onToggle, mobileView }: SidebarProps) {
               {isChangingPassword ? "Mengubah..." : "Ganti Password"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+      {/* Global Management Dialogs */}
+      <Dialog open={usersOpen} onOpenChange={setUsersOpen}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manajemen User</DialogTitle>
+          </DialogHeader>
+          <UserManagement />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rolesOpen} onOpenChange={setRolesOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manajemen Role</DialogTitle>
+          </DialogHeader>
+          <RoleManagement />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={storesManageOpen} onOpenChange={setStoresManageOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manajemen Cabang</DialogTitle>
+          </DialogHeader>
+          <StoreManagement />
         </DialogContent>
       </Dialog>
     </>

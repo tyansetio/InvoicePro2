@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ClientForm } from "@/components/clients/client-form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useStore } from "@/lib/store-context";
 import { format } from "date-fns";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -54,6 +55,7 @@ type ClientInvoice = {
 
 export default function ClientDetailPage() {
   const { id } = useParams();
+  const { currentStoreId } = useStore();
   const clientId = parseInt(id!);
   const [, setLocation] = useLocation();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -96,7 +98,8 @@ export default function ClientDetailPage() {
 
   type CashAccountItem = { id: number; name: string; accountType: string };
   const { data: cashAccounts } = useQuery<CashAccountItem[]>({
-    queryKey: ['/api/cash-accounts'],
+    queryKey: [`/api/stores/${currentStoreId}/cash-accounts`],
+    enabled: !!currentStoreId,
   });
 
   const { toast } = useToast();
