@@ -186,15 +186,23 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
   });
 
   const { data: suppliers } = useQuery<Supplier[]>({
-    queryKey: ['/api/suppliers'],
+    queryKey: [`/api/stores/${currentStoreId}/suppliers`],
+    enabled: !!currentStoreId,
   });
 
   const { data: products } = useQuery<Product[]>({
-    queryKey: ['/api/products'],
+    queryKey: [`/api/products`, { storeId: currentStoreId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/products?storeId=${currentStoreId}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch products');
+      return res.json();
+    },
+    enabled: !!currentStoreId,
   });
 
   const { data: purchaseOrders } = useQuery<PurchaseOrderWithItems[]>({
-    queryKey: ['/api/purchase-orders'],
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders`],
+    enabled: !!currentStoreId,
   });
 
   const { data: cashAccounts } = useQuery<CashAccount[]>({
@@ -204,18 +212,18 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
   const hasExistingId = !!goodsReceiptId;
 
   const { data: existingReceipt } = useQuery<GoodsReceiptData>({
-    queryKey: ['/api/goods-receipts', goodsReceiptId],
-    enabled: hasExistingId,
+    queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId],
+    enabled: hasExistingId && !!currentStoreId,
   });
 
   const { data: nextReceiptNumberData } = useQuery<{ receiptNumber: string }>({
-    queryKey: ['/api/goods-receipts/next-number'],
-    enabled: !hasExistingId,
+    queryKey: [`/api/stores/${currentStoreId}/goods-receipts/next-number`],
+    enabled: !hasExistingId && !!currentStoreId,
   });
 
   const { data: receiptPayments, refetch: refetchPayments } = useQuery<GoodsReceiptPayment[]>({
-    queryKey: ['/api/goods-receipts', goodsReceiptId, 'payments'],
-    enabled: hasExistingId,
+    queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId, 'payments'],
+    enabled: hasExistingId && !!currentStoreId,
   });
 
   // Fetch payment status for all prepaid POs (for dropdown and selected items)
@@ -235,7 +243,7 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
       for (const poId of prepaidPOIds) {
         if (prepaidPOPaymentStatus[poId]) continue; // Already fetched
         try {
-          const response = await fetch(`/api/purchase-orders/${poId}/payments`);
+          const response = await fetch(`/api/stores/${currentStoreId}/purchase-orders/${poId}/payments`);
           if (response.ok) {
             const payments = await response.json();
             const po = purchaseOrders.find(p => p.id === poId);
@@ -524,10 +532,10 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('POST', '/api/goods-receipts', data);
+      return apiRequest('POST', `/api/stores/${currentStoreId}/goods-receipts`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/goods-receipts'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`] });
       toast({ title: "Success", description: "Goods receipt created successfully." });
       navigate('/goods-receipts');
     },
@@ -544,10 +552,11 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('PUT', `/api/goods-receipts/${goodsReceiptId}`, data);
+      return apiRequest('PUT', `/api/stores/${currentStoreId}/goods-receipts/${goodsReceiptId}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/goods-receipts'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId] });
       toast({ title: "Success", description: "Goods receipt updated successfully." });
     },
     onError: (error) => {
@@ -585,11 +594,12 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
 
   const createPaymentMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('POST', `/api/goods-receipts/${goodsReceiptId}/payments`, data);
+      return apiRequest('POST', `/api/stores/${currentStoreId}/goods-receipts/${goodsReceiptId}/payments`, data);
     },
     onSuccess: () => {
       refetchPayments();
-      queryClient.invalidateQueries({ queryKey: ['/api/goods-receipts', goodsReceiptId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId, 'payments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId] });
       invalidateTransactions();
       setPaymentDialogOpen(false);
       resetPaymentForm();
@@ -602,11 +612,12 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
 
   const updatePaymentMutation = useMutation({
     mutationFn: async ({ paymentId, data }: { paymentId: number, data: any }) => {
-      return apiRequest('PUT', `/api/goods-receipts/${goodsReceiptId}/payments/${paymentId}`, data);
+      return apiRequest('PUT', `/api/stores/${currentStoreId}/goods-receipts/${goodsReceiptId}/payments/${paymentId}`, data);
     },
     onSuccess: () => {
       refetchPayments();
-      queryClient.invalidateQueries({ queryKey: ['/api/goods-receipts', goodsReceiptId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId, 'payments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId] });
       invalidateTransactions();
       setPaymentDialogOpen(false);
       setEditingPayment(null);
@@ -620,11 +631,12 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
 
   const deletePaymentMutation = useMutation({
     mutationFn: async (paymentId: number) => {
-      return apiRequest('DELETE', `/api/goods-receipts/${goodsReceiptId}/payments/${paymentId}`, undefined);
+      return apiRequest('DELETE', `/api/stores/${currentStoreId}/goods-receipts/${goodsReceiptId}/payments/${paymentId}`, undefined);
     },
     onSuccess: () => {
       refetchPayments();
-      queryClient.invalidateQueries({ queryKey: ['/api/goods-receipts', goodsReceiptId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId, 'payments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/goods-receipts`, goodsReceiptId] });
       invalidateTransactions();
       toast({ title: "Success", description: "Payment deleted successfully." });
     },
@@ -921,8 +933,6 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
                           <TableHead className="w-[150px]">Linked PO</TableHead>
                           <TableHead className="w-[80px] text-right">Qty</TableHead>
                           <TableHead className="w-[100px] text-right">Unit Cost</TableHead>
-                          <TableHead className="w-[70px] text-right">Tax %</TableHead>
-                          <TableHead className="w-[80px] text-right">Discount</TableHead>
                           <TableHead className="w-[100px] text-right">Subtotal</TableHead>
                           <TableHead className="w-[40px]"></TableHead>
                         </TableRow>
@@ -1049,25 +1059,7 @@ export default function GoodsReceiptForm({ goodsReceiptId, onSuccess, mode = goo
                                 />
                               )}
                             </TableCell>
-                            <TableCell className="p-1">
-                              <Input 
-                                type="number" 
-                                step="0.01" 
-                                value={item.taxRate} 
-                                onChange={(e) => updateItem(index, 'taxRate', e.target.value)} 
-                                className="h-8 text-right" 
-                                readOnly={!!item.purchaseOrderId}
-                              />
-                            </TableCell>
-                            <TableCell className="p-1">
-                              <Input 
-                                type="number" 
-                                step="0.01" 
-                                value={item.discount} 
-                                onChange={(e) => updateItem(index, 'discount', e.target.value)} 
-                                className="h-8 text-right" 
-                              />
-                            </TableCell>
+
                             <TableCell className="p-1 text-right font-medium">
                               {formatCurrency(item.subtotal || "0")}
                             </TableCell>

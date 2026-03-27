@@ -39,6 +39,7 @@ import { formatDate, formatCurrency } from "@/lib/utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useStore } from "@/lib/store-context";
 
 type PurchaseOrder = {
   id: number;
@@ -72,22 +73,23 @@ export default function PurchaseOrdersPage() {
   const [itemSearchQuery, setItemSearchQuery] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { currentStoreId } = useStore();
   
   const { data: purchaseOrders, isLoading } = useQuery<PurchaseOrder[]>({
-    queryKey: ['/api/purchase-orders'],
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders`],
   });
 
   const { data: pendingItems, isLoading: isLoadingPendingItems } = useQuery<PendingPOItem[]>({
-    queryKey: ['/api/purchase-orders/pending-items'],
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders/pending-items`],
   });
 
   // Delete purchase order mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest('DELETE', `/api/purchase-orders/${id}`, undefined);
+      return apiRequest('DELETE', `/api/stores/${currentStoreId}/purchase-orders/${id}`, undefined);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`] });
       toast({
         title: "Purchase order deleted",
         description: "The purchase order has been deleted successfully.",

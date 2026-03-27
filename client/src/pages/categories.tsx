@@ -38,6 +38,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertCategorySchema, type Category, type InsertCategory } from "@shared/schema";
+import { useStore } from "@/lib/store-context";
 
 export default function CategoriesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -46,8 +47,10 @@ export default function CategoriesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
+  const { currentStoreId } = useStore();
+  
   const { data: categories, isLoading } = useQuery<Category[]>({
-    queryKey: ['/api/categories'],
+    queryKey: [`/api/stores/${currentStoreId}/categories`],
   });
 
   const form = useForm<InsertCategory>({
@@ -63,11 +66,11 @@ export default function CategoriesPage() {
       if (id) {
         return apiRequest('PUT', `/api/categories/${id}`, data);
       } else {
-        return apiRequest('POST', '/api/categories', data);
+        return apiRequest('POST', `/api/stores/${currentStoreId}/categories`, data);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/categories'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/categories`] });
       setIsDialogOpen(false);
       setEditingCategory(null);
       form.reset();
@@ -92,7 +95,7 @@ export default function CategoriesPage() {
       return apiRequest('DELETE', `/api/categories/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/categories'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/categories`] });
       setDeletingCategory(null);
       toast({
         title: "Category deleted",

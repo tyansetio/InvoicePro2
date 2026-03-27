@@ -363,12 +363,19 @@ export function PurchaseOrderForm({ purchaseOrderId, onSuccess }: PurchaseOrderF
 
   // Fetch suppliers for the dropdown
   const { data: suppliers } = useQuery<any[]>({
-    queryKey: ['/api/suppliers'],
+    queryKey: [`/api/stores/${currentStoreId}/suppliers`],
+    enabled: !!currentStoreId,
   });
 
   // Fetch products for product selection
   const { data: products = [] } = useQuery<any[]>({
-    queryKey: ['/api/products'],
+    queryKey: [`/api/products`, { storeId: currentStoreId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/products?storeId=${currentStoreId}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch products');
+      return res.json();
+    },
+    enabled: !!currentStoreId,
   });
 
   // Fetch current user for default notes and tax rate
@@ -378,14 +385,14 @@ export function PurchaseOrderForm({ purchaseOrderId, onSuccess }: PurchaseOrderF
 
   // Fetch existing purchase order for edit mode
   const { data: existingPO, isLoading: isLoadingPO } = useQuery<any>({
-    queryKey: ['/api/purchase-orders', purchaseOrderId],
-    enabled: !!purchaseOrderId,
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, purchaseOrderId],
+    enabled: !!purchaseOrderId && !!currentStoreId,
   });
 
   // For new purchase orders, fetch the next PO number preview with fallback
   const { data: nextPONumberData, isError: isNumberError } = useQuery<{ purchaseOrderNumber: string }>({
-    queryKey: ['/api/purchase-orders/next-number'],
-    enabled: !purchaseOrderId, // Only for new purchase orders
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders/next-number`],
+    enabled: !purchaseOrderId && !!currentStoreId, // Only for new purchase orders
   });
   
   const generateFallbackPONumber = () => {
@@ -399,9 +406,9 @@ export function PurchaseOrderForm({ purchaseOrderId, onSuccess }: PurchaseOrderF
     (isNumberError ? generateFallbackPONumber() : null);
 
   // Fetch PO payments for prepaid POs
-  const { data: poPayments = [] } = useQuery<any[]>({
-    queryKey: ['/api/purchase-orders', purchaseOrderId, 'payments'],
-    enabled: !!purchaseOrderId,
+  const { data: poPayments = [], refetch: refetchPayments } = useQuery<any[]>({
+    queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, purchaseOrderId, 'payments'],
+    enabled: !!purchaseOrderId && !!currentStoreId,
   });
 
   // Fetch cash accounts for payment recording
@@ -578,13 +585,13 @@ export function PurchaseOrderForm({ purchaseOrderId, onSuccess }: PurchaseOrderF
       };
 
       if (purchaseOrderId) {
-        return apiRequest('PUT', `/api/purchase-orders/${purchaseOrderId}`, formattedValues);
+        return apiRequest('PUT', `/api/stores/${currentStoreId}/purchase-orders/${purchaseOrderId}`, formattedValues);
       } else {
-        return apiRequest('POST', '/api/purchase-orders', formattedValues);
+        return apiRequest('POST', `/api/stores/${currentStoreId}/purchase-orders`, formattedValues);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`] });
       toast({
         title: purchaseOrderId ? "Purchase order updated" : "Purchase order created",
         description: purchaseOrderId ? "Purchase order has been updated successfully." : "Purchase order has been created successfully.",
@@ -709,7 +716,7 @@ export function PurchaseOrderForm({ purchaseOrderId, onSuccess }: PurchaseOrderF
   const fetchProductUnits = async (productId: number) => {
     if (!productId || productUnitsMap[productId]) return;
     try {
-      const response = await fetch(`/api/products/${productId}/units`, { credentials: 'include' });
+      const response = await fetch(`/api/stores/${currentStoreId}/products/${productId}/units`, { credentials: 'include' });
       if (response.ok) {
         const units = await response.json();
         setProductUnitsMap(prev => ({ ...prev, [productId]: units }));
@@ -859,14 +866,14 @@ export function PurchaseOrderForm({ purchaseOrderId, onSuccess }: PurchaseOrderF
 
     try {
       if (editingPayment) {
-        await apiRequest('PUT', `/api/purchase-orders/${purchaseOrderId}/payments/${editingPayment.id}`, payload);
+        await apiRequest('PUT', `/api/stores/${currentStoreId}/purchase-orders/${purchaseOrderId}/payments/${editingPayment.id}`, payload);
         toast({ title: "Pembayaran berhasil diperbarui" });
       } else {
-        await apiRequest('POST', `/api/purchase-orders/${purchaseOrderId}/payments`, payload);
+        await apiRequest('POST', `/api/stores/${currentStoreId}/purchase-orders/${purchaseOrderId}/payments`, payload);
         toast({ title: "Pembayaran berhasil ditambahkan" });
       }
       setPaymentDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', purchaseOrderId, 'payments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, purchaseOrderId, 'payments'] });
     } catch (error) {
       toast({ title: "Failed to save payment", variant: "destructive" });
     }
@@ -876,9 +883,9 @@ export function PurchaseOrderForm({ purchaseOrderId, onSuccess }: PurchaseOrderF
     if (!purchaseOrderId) return;
     
     try {
-      await apiRequest('DELETE', `/api/purchase-orders/${purchaseOrderId}/payments/${paymentId}`);
+      await apiRequest('DELETE', `/api/stores/${currentStoreId}/purchase-orders/${purchaseOrderId}/payments/${paymentId}`);
       toast({ title: "Payment deleted successfully" });
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders', purchaseOrderId, 'payments'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/stores/${currentStoreId}/purchase-orders`, purchaseOrderId, 'payments'] });
     } catch (error) {
       toast({ title: "Failed to delete payment", variant: "destructive" });
     }

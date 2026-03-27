@@ -103,6 +103,12 @@ export default function InvoicesPage() {
     queryKey: ['/api/user'],
   });
 
+  // Fetch store details (name, address, tagline, etc.)
+  const { data: currentStore } = useQuery<any>({
+    queryKey: [`/api/stores/${currentStoreId}`],
+    enabled: !!currentStoreId,
+  });
+
   // Void invoice mutation
   const voidMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -151,6 +157,7 @@ export default function InvoicesPage() {
         },
         items: invoiceData.items,
         client: invoiceData.client,
+        company: currentStore,
         defaultNotes: currentUser?.invoiceNotes || currentUser?.defaultNotes
       });
       

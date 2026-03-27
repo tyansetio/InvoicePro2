@@ -71,7 +71,7 @@ export default function DeliveryPlanningPage() {
   const deliveryNotes = allPendingNotes?.filter(n => n.deliveryType !== 'self_pickup');
 
   const { data: categories } = useQuery<Category[]>({
-    queryKey: ['/api/categories']
+    queryKey: [`/api/stores/${currentStoreId}/categories`]
   });
 
   useEffect(() => {

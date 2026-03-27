@@ -1,22 +1,25 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { formatDate, formatCurrency } from "@/lib/utils";
+import { format } from "date-fns";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { useStore } from "@/lib/store-context";
 
-interface Invoice {
+interface RecentInvoice {
   id: number;
   invoiceNumber: string;
   clientName: string;
   issueDate: string;
-  total: string;
-  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void';
+  total: number;
+  status: string;
 }
 
 export function RecentInvoicesTable() {
-  const { data, isLoading, error } = useQuery<Invoice[]>({
-    queryKey: ['/api/dashboard/recent-invoices'],
+  const { currentStoreId } = useStore();
+  const { data, isLoading, error } = useQuery<RecentInvoice[]>({
+    queryKey: [`/api/stores/${currentStoreId}/dashboard/recent-invoices`],
   });
 
   const getStatusBadge = (status: string) => {

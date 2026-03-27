@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/utils";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useStore } from "@/lib/store-context";
 
 interface TopClient {
   id: number;
@@ -14,10 +15,11 @@ interface TopClient {
 }
 
 export function TopClientsList() {
+  const { currentStoreId } = useStore();
   const { data, isLoading, error } = useQuery<TopClient[]>({
-    queryKey: ['/api/dashboard/top-clients', { limit: 10 }],
+    queryKey: [`/api/stores/${currentStoreId}/dashboard/topclients`, { limit: 10 }],
     queryFn: async () => {
-      const response = await fetch('/api/dashboard/top-clients?limit=10');
+      const response = await fetch(`/api/stores/${currentStoreId}/dashboard/topclients?limit=10`);
       if (!response.ok) throw new Error('Failed to fetch');
       return response.json();
     },

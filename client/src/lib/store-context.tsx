@@ -17,17 +17,33 @@ interface StoreProviderProps {
 
 export function StoreProvider({ user, children }: StoreProviderProps) {
   const getInitialStoreId = () => {
+    // Staff are always locked to their assigned store
     if (user.role === 'staff' && user.storeId) return user.storeId;
-    return 1;
+    
+    // Check localStorage for persisted store selection
+    const savedStoreId = localStorage.getItem("currentStoreId");
+    if (savedStoreId) {
+      const id = parseInt(savedStoreId);
+      if (!isNaN(id)) return id;
+    }
+    
+    // Default to store 1 or user's store if owner has one (though owner usually manages all)
+    return user.storeId || 1;
   };
 
   const [currentStoreId, setCurrentStoreId] = useState<number>(getInitialStoreId);
 
+  // Persistence effect
+  useEffect(() => {
+    localStorage.setItem("currentStoreId", currentStoreId.toString());
+  }, [currentStoreId]);
+
+  // Handle user change (e.g. login/logout)
   useEffect(() => {
     if (user.role === 'staff' && user.storeId) {
       setCurrentStoreId(user.storeId);
     }
-  }, [user.id, user.storeId]);
+  }, [user.id, user.storeId, user.role]);
 
   return (
     <StoreContext.Provider value={{ currentStoreId, setCurrentStoreId }}>
