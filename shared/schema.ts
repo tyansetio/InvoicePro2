@@ -9,7 +9,7 @@ export const paymentStatusEnum = pgEnum('payment_status', ['unpaid', 'partial_pa
 // Invoice delivery status (calculated automatically based on delivery notes)
 export const invoiceDeliveryStatusEnum = pgEnum('invoice_delivery_status', ['undelivered', 'partial_delivered', 'delivered']);
 export const quotationStatusEnum = pgEnum('quotation_status', ['draft', 'sent', 'accepted', 'rejected', 'expired']);
-export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['pending', 'partial', 'received', 'cancelled']);
+export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['draft', 'pending', 'partial', 'received', 'cancelled']);
 export const transactionTypeEnum = pgEnum('transaction_type', ['income', 'expense']);
 export const paperSizeEnum = pgEnum('paper_size', ['a4', 'prs', 'halfsize']);
 export const productTypeEnum = pgEnum('product_type', ['standard', 'bundle']);
@@ -32,20 +32,8 @@ export const users = pgTable("users", {
   storeId: integer("store_id").references(() => stores.id, { onDelete: 'set null' }),
   permissions: text("permissions").array().default([]).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
-  companyName: varchar("company_name", { length: 200 }),
-  companyTagline: varchar("company_tagline", { length: 200 }),
-  companyAddress: text("company_address"),
-  companyPhone: varchar("company_phone", { length: 100 }),
-  companyEmail: varchar("company_email", { length: 100 }),
-  taxNumber: varchar("tax_number", { length: 50 }),
-  defaultTaxRate: numeric("default_tax_rate", { precision: 5, scale: 2 }).default("11"),
   phone: varchar("phone", { length: 50 }),
   address: text("address"),
-  logoUrl: varchar("logo_url", { length: 500 }),
-  quotationNotes: text("quotation_notes"),
-  invoiceNotes: text("invoice_notes"),
-  deliveryNoteNotes: text("delivery_note_notes"),
-  defaultNotes: text("default_notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -54,14 +42,21 @@ export const users = pgTable("users", {
 export const stores = pgTable("stores", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 100 }).notNull(),
+  tagline: varchar("tagline", { length: 200 }),
   address: text("address"),
   phone: varchar("phone", { length: 50 }),
   email: varchar("email", { length: 100 }),
+  taxNumber: varchar("tax_number", { length: 50 }),
+  defaultTaxRate: numeric("default_tax_rate", { precision: 5, scale: 2 }).default("11"),
   npwp: varchar("npwp", { length: 50 }),
   bankName: varchar("bank_name", { length: 100 }),
   bankAccountNumber: varchar("bank_account_number", { length: 50 }),
   bankAccountName: varchar("bank_account_name", { length: 100 }),
   logoUrl: text("logo_url"),
+  quotationNotes: text("quotation_notes"),
+  invoiceNotes: text("invoice_notes"),
+  deliveryNoteNotes: text("delivery_note_notes"),
+  defaultNotes: text("default_notes"),
   isActive: boolean("is_active").default(true).notNull(),
   invoicePaymentCategoryId: integer("invoice_payment_category_id"),
   goodsReceiptPaymentCategoryId: integer("goods_receipt_payment_category_id"),
@@ -168,10 +163,15 @@ export const suppliers = pgTable("suppliers", {
 // Categories table
 export const categories = pgTable("categories", {
   id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => stores.id, { onDelete: 'cascade' }).notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => {
+  return {
+    storeIdIdx: index("categories_store_id_idx").on(table.storeId)
+  };
 });
 
 export const inflowCategories = pgTable("inflow_categories", {
@@ -197,6 +197,7 @@ export const outflowCategories = pgTable("outflow_categories", {
 // Products table
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => stores.id, { onDelete: 'cascade' }).notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   sku: varchar("sku", { length: 50 }).notNull(),
   description: text("description"),
@@ -214,7 +215,8 @@ export const products = pgTable("products", {
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 }, (table) => {
   return {
-    skuIdx: uniqueIndex("products_sku_unique_idx").on(table.sku),
+    skuStoreIdx: uniqueIndex("products_sku_store_unique_idx").on(table.sku, table.storeId),
+    storeIdIdx: index("products_store_id_idx").on(table.storeId),
     categoryIdIdx: index("products_category_id_idx").on(table.categoryId),
     nameIdx: index("products_name_idx").on(table.name),
     productTypeIdx: index("products_product_type_idx").on(table.productType)
@@ -280,8 +282,8 @@ export const productBatches = pgTable("product_batches", {
   };
 });
 
-// Payment terms enum
-export const paymentTermsEnum = pgEnum("payment_terms", ["cod", "net_7", "net_14", "net_30", "custom"]);
+// Payment terms enum (REMOVED: replaced by varchar for flexibility)
+// export const paymentTermsEnum = pgEnum("payment_terms", ["cod", "net_7", "net_14", "net_30", "custom"]);
 
 // Invoices table
 export const invoices = pgTable("invoices", {
@@ -289,7 +291,7 @@ export const invoices = pgTable("invoices", {
   storeId: integer("store_id").references(() => stores.id, { onDelete: 'cascade' }).notNull(),
   invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
   clientId: integer("client_id").references(() => clients.id),
-  paymentTerms: paymentTermsEnum("payment_terms").default("net_30").notNull(),
+  paymentTerms: varchar("payment_terms", { length: 50 }).default("net_30").notNull(),
   issueDate: date("issue_date").notNull(),
   dueDate: date("due_date").notNull(),
   status: invoiceStatusEnum("status").default("draft").notNull(),
@@ -762,7 +764,7 @@ export const paymentTypes = pgTable("payment_types", {
 export const paymentTermsConfig = pgTable("payment_terms_config", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").references(() => stores.id, { onDelete: 'cascade' }).notNull(),
-  code: paymentTermsEnum("code").notNull(),
+  code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   days: integer("days").notNull(),
   description: text("description"),
@@ -778,6 +780,7 @@ export const paymentTermsConfig = pgTable("payment_terms_config", {
 // Import/Export Logs
 export const importExportLogs = pgTable("import_export_logs", {
   id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => stores.id, { onDelete: 'cascade' }).notNull(),
   userId: integer("user_id").references(() => users.id).notNull(),
   type: varchar("type", { length: 20 }).notNull(), // import or export
   entityType: varchar("entity_type", { length: 50 }).notNull(), // products, clients, etc.
@@ -787,6 +790,11 @@ export const importExportLogs = pgTable("import_export_logs", {
   errorDetails: text("error_details"),
   completedAt: timestamp("completed_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull()
+}, (table) => {
+  return {
+    storeIdIdx: index("import_export_logs_store_id_idx").on(table.storeId),
+    userIdIdx: index("import_export_logs_user_id_idx").on(table.userId)
+  };
 });
 
 // Returns/Credit Notes enums and tables
@@ -938,6 +946,7 @@ export const AVAILABLE_PERMISSIONS = [
   'returns.create',
   'returns.edit',
   'returns.delete',
+  'returns.print',
   'transactions.view',
   'transactions.create',
   'transactions.edit',
@@ -973,12 +982,12 @@ export const updateUserProfileSchema = z.object({
   address: z.string().optional(),
 });
 
-export const updateUserCompanySchema = z.object({
-  companyName: z.string().max(200).optional(),
-  companyTagline: z.string().max(200).optional(),
-  companyAddress: z.string().optional(),
-  companyPhone: z.string().max(100).optional(),
-  companyEmail: z.string().email().max(100).optional().or(z.literal("")),
+export const updateStoreIdentitySchema = z.object({
+  name: z.string().max(100).optional(),
+  tagline: z.string().max(200).optional(),
+  address: z.string().optional(),
+  phone: z.string().max(50).optional(),
+  email: z.string().email().max(100).optional().or(z.literal("")),
   taxNumber: z.string().max(50).optional(),
   defaultTaxRate: z.string().optional(),
   logoUrl: z.string().max(500).optional(),
@@ -994,11 +1003,43 @@ export const updateUserPaymentSchema = z.object({
 });
 export const insertStoreSchema = createInsertSchema(stores).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertRoleSchema = createInsertSchema(roles).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertClientSchema = createInsertSchema(clients).omit({ id: true, clientNumber: true, createdAt: true, updatedAt: true });
-export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, supplierNumber: true, createdAt: true, updatedAt: true });
-export const insertCategorySchema = createInsertSchema(categories).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertInflowCategorySchema = createInsertSchema(inflowCategories).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertOutflowCategorySchema = createInsertSchema(outflowCategories).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientSchema = createInsertSchema(clients).omit({ 
+  id: true, 
+  clientNumber: true, 
+  createdAt: true, 
+  updatedAt: true 
+}).extend({
+  storeId: z.number().optional()
+});
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({ 
+  id: true, 
+  supplierNumber: true, 
+  createdAt: true, 
+  updatedAt: true 
+}).extend({
+  storeId: z.number().optional()
+});
+export const insertCategorySchema = createInsertSchema(categories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+}).extend({
+  storeId: z.number().optional()
+});
+export const insertInflowCategorySchema = createInsertSchema(inflowCategories).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+}).extend({
+  storeId: z.number().optional()
+});
+export const insertOutflowCategorySchema = createInsertSchema(outflowCategories).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+}).extend({
+  storeId: z.number().optional()
+});
 export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProductBundleComponentSchema = createInsertSchema(productBundleComponents).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProductUnitSchema = createInsertSchema(productUnits).omit({ id: true, createdAt: true, updatedAt: true });
@@ -1020,7 +1061,13 @@ export const insertSettingSchema = createInsertSchema(settings).omit({ id: true,
 export const insertPrintSettingsSchema = createInsertSchema(printSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertImportExportLogSchema = createInsertSchema(importExportLogs).omit({ id: true, createdAt: true });
 export const insertPaymentTypeSchema = createInsertSchema(paymentTypes).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertPaymentTermSchema = createInsertSchema(paymentTermsConfig).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPaymentTermSchema = createInsertSchema(paymentTermsConfig).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+}).extend({
+  code: z.string().optional()
+});
 export const insertDeliveryNoteSchema = createInsertSchema(deliveryNotes).omit({ id: true, deliveryNumber: true, createdAt: true, updatedAt: true });
 export const insertDeliveryNoteItemSchema = createInsertSchema(deliveryNoteItems).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertReturnSchema = createInsertSchema(returns).omit({ id: true, returnNumber: true, createdAt: true, updatedAt: true });
@@ -1221,6 +1268,7 @@ export const clientDepositsRelations = relations(clientDeposits, ({ one }) => ({
 }));
 
 export const productsRelations = relations(products, ({ one, many }) => ({
+  store: one(stores, { fields: [products.storeId], references: [stores.id] }),
   category: one(categories, { fields: [products.categoryId], references: [categories.id] }),
   batches: many(productBatches),
   bundleComponents: many(productBundleComponents),

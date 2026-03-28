@@ -1086,6 +1086,7 @@ export function InvoiceForm({ invoiceId, onSuccess }: InvoiceFormProps) {
         invoice: safeInvoice,
         items: values.items || [],
         client: safeClient,
+        company: storeData,
         defaultNotes: currentUser?.invoiceNotes || currentUser?.defaultNotes
       });
 

@@ -120,6 +120,7 @@ const PERMISSION_GROUPS = {
     { id: "returns.view", label: "Lihat Retur" },
     { id: "returns.create", label: "Buat Retur" },
     { id: "returns.delete", label: "Hapus Retur" },
+    { id: "returns.print", label: "Print Retur" },
   ],
   "Klien": [
     { id: "clients.view", label: "Lihat Klien" },

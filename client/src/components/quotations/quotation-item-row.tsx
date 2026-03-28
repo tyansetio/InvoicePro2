@@ -122,9 +122,15 @@ export function QuotationItemRow({
     setProductUnitId(item.productUnitId?.toString() || "");
   }, [item.id, item.description, item.quantity, item.unitPrice, item.taxRate, item.productId, item.productUnitId]);
 
+  const lastFetchedProductIdRef = useRef<string>("");
+
   // Fetch product units when product changes and sync lowestPrice
   useEffect(() => {
     if (productId && productId !== "0") {
+      // Skip fetch if we already fetched for this productId
+      if (lastFetchedProductIdRef.current === productId) return;
+      lastFetchedProductIdRef.current = productId;
+
       fetch(`/api/products/${productId}/units`, { credentials: 'include' })
         .then(res => res.ok ? res.json() : [])
         .then(units => setProductUnits(units || []))
@@ -134,11 +140,12 @@ export function QuotationItemRow({
         setLowestPrice(prod.lowestPrice ? parseFloat(prod.lowestPrice) : null);
       }
     } else {
+      lastFetchedProductIdRef.current = "";
       setProductUnits([]);
       setProductUnitId("");
       setLowestPrice(null);
     }
-  }, [productId, products]);
+  }, [productId]);
 
   // Notify parent whether price passes lowest price validation
   useEffect(() => {

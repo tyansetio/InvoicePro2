@@ -43,6 +43,14 @@ interface PDFData {
   invoice: Invoice;
   items: PDFInvoiceItem[];
   client: Client;
+  company?: {
+    name?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    logoUrl?: string;
+    tagline?: string;
+  };
   defaultNotes?: string;
 }
 
@@ -61,14 +69,21 @@ export async function generatePDF(data: PDFData) {
     // Set company info
     doc.setFontSize(24);
     doc.setTextColor(79, 70, 229); // primary color
-    doc.text("AluminumManager", 20, 20);
+    doc.text(data.company?.name || "AluminumManager", 20, 20);
     
     doc.setFontSize(10);
     doc.setTextColor(100, 100, 100);
-    doc.text("123 Main Street", 20, 30);
-    doc.text("Anytown, ST 12345", 20, 35);
-    doc.text("Phone: (123) 456-7890", 20, 40);
-    doc.text("Email: info@aluminummanager.com", 20, 45);
+    doc.text(data.company?.address || "123 Main Street", 20, 30);
+    
+    let infoY = 35;
+    if (data.company?.phone) {
+      doc.text(`Phone: ${data.company.phone}`, 20, infoY);
+      infoY += 5;
+    }
+    if (data.company?.email) {
+      doc.text(`Email: ${data.company.email}`, 20, infoY);
+      infoY += 5;
+    }
     
     // Add invoice title and number
     doc.setFontSize(16);

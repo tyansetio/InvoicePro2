@@ -138,6 +138,12 @@ export default function InvoiceDetailPage({
   const requirePaymentBeforePrint = storeSettings?.require_payment_before_delivery_print === 'true';
   const lockPaidInvoices = storeSettings?.lock_paid_invoices === 'true';
 
+  // Fetch store details (name, address, tagline, etc.)
+  const { data: currentStore } = useQuery<any>({
+    queryKey: [`/api/stores/${currentStoreId}`],
+    enabled: !!currentStoreId,
+  });
+
   // Permission helpers
   const isOwner = currentUser?.role === 'owner';
   const canManagePayments = isOwner || (currentUser?.permissions?.includes('payments.manage') ?? false);
@@ -372,6 +378,7 @@ export default function InvoiceDetailPage({
           price: item.unitPrice
         })) as any,
         client: client as any,
+        company: currentStore,
         defaultNotes: storePrintSettings?.invoiceNotes || storePrintSettings?.defaultNotes
       });
       
@@ -907,9 +914,9 @@ export default function InvoiceDetailPage({
         <div class="print-header">
           <div class="print-header-left">
             <div class="print-logo">
-              ${currentUser?.logoUrl 
-                ? `<img src="${currentUser.logoUrl}" alt="Logo" class="print-logo-image" />`
-                : `<div class="print-logo-circle">${(currentUser?.companyName || 'CO').substring(0, 2).toUpperCase()}</div>`
+              ${currentStore?.logoUrl 
+                ? `<img src="${currentStore.logoUrl}" alt="Logo" class="print-logo-image" />`
+                : `<div class="print-logo-circle">${(currentStore?.name || 'CO').substring(0, 2).toUpperCase()}</div>`
               }
             </div>
             <div class="print-bill-to">
@@ -925,11 +932,11 @@ export default function InvoiceDetailPage({
           </div>
           
           <div class="print-header-center">
-            <div class="print-company-name">${currentUser?.companyName || 'YOUR COMPANY NAME'}</div>
-            ${currentUser?.companyTagline ? `<div class="print-company-tagline">${currentUser.companyTagline}</div>` : ''}
+            <div class="print-company-name">${currentStore?.name || 'YOUR COMPANY NAME'}</div>
+            ${currentStore?.tagline ? `<div class="print-company-tagline">${currentStore.tagline}</div>` : ''}
             <div class="print-company-row2">
-              <span class="print-company-address">${currentUser?.companyAddress || 'Your Company Address'}</span>
-              ${currentUser?.companyPhone ? `<span>Phone: ${currentUser.companyPhone}</span>` : ''}
+              <span class="print-company-address">${currentStore?.address || 'Your Company Address'}</span>
+              ${currentStore?.phone ? `<span>Phone: ${currentStore.phone}</span>` : ''}
             </div>
           </div>
           
@@ -1432,11 +1439,11 @@ export default function InvoiceDetailPage({
               {/* Left column: Logo + Bill To */}
               <div className="print-header-left" style={{ flexDirection: 'column' }}>
                 <div className="print-logo">
-                  {currentUser?.logoUrl ? (
-                    <img src={currentUser.logoUrl} alt="Company Logo" className="print-logo-image" />
+                  {currentStore?.logoUrl ? (
+                    <img src={currentStore.logoUrl} alt="Company Logo" className="print-logo-image" />
                   ) : (
                     <div className="print-logo-circle" style={{ borderColor: '#000' }}>
-                      {currentUser?.companyName?.substring(0, 2).toUpperCase() || 'CO'}
+                      {currentStore?.name?.substring(0, 2).toUpperCase() || 'CO'}
                     </div>
                   )}
                 </div>
@@ -1454,17 +1461,17 @@ export default function InvoiceDetailPage({
               
               {/* Center column: Company Info */}
               <div className="print-header-center">
-                <div className="print-company-name">{currentUser?.companyName || "YOUR COMPANY NAME"}</div>
-                {currentUser?.companyTagline && (
-                  <div className="print-company-tagline">{currentUser.companyTagline}</div>
+                <div className="print-company-name">{currentStore?.name || "YOUR COMPANY NAME"}</div>
+                {currentStore?.tagline && (
+                  <div className="print-company-tagline">{currentStore.tagline}</div>
                 )}
                 <div className="print-company-row2">
-                  <span className="print-company-address">{currentUser?.companyAddress || "Your Company Address"}</span>
-                  {currentUser?.companyPhone && (
-                    <span>Phone: {currentUser.companyPhone}</span>
+                  <span className="print-company-address">{currentStore?.address || "Your Company Address"}</span>
+                  {currentStore?.phone && (
+                    <span>Phone: {currentStore.phone}</span>
                   )}
-                  {currentUser?.companyEmail && (
-                    <span>Email: {currentUser.companyEmail}</span>
+                  {currentStore?.email && (
+                    <span>Email: {currentStore.email}</span>
                   )}
                 </div>
               </div>

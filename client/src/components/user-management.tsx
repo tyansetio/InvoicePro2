@@ -65,12 +65,18 @@ const PERMISSION_GROUPS = {
     { id: "products.edit", label: "Edit Produk" },
     { id: "products.delete", label: "Hapus Produk" },
     { id: "products.adjust_stock", label: "Adjust Stock" },
+    { id: "products.view_cost", label: "Lihat Cost Price" },
+    { id: "products.view_lowest_price", label: "Lihat Lowest Price" },
+    { id: "products.export", label: "Export Produk" },
+    { id: "products.import", label: "Import Produk" },
   ],
   "Invoice": [
     { id: "invoices.view", label: "Lihat Invoice" },
     { id: "invoices.create", label: "Buat Invoice" },
     { id: "invoices.edit", label: "Edit Invoice" },
     { id: "invoices.print", label: "Print Invoice" },
+    { id: "payments.manage", label: "Tambah/Ubah Payment" },
+    { id: "invoices.override_lowest_price", label: "Set Harga di Bawah Lowest Price" },
   ],
   "Quotation": [
     { id: "quotations.view", label: "Lihat Quotation" },
@@ -95,12 +101,14 @@ const PERMISSION_GROUPS = {
     { id: "delivery_notes.create", label: "Buat Surat Jalan" },
     { id: "delivery_notes.edit", label: "Edit Surat Jalan" },
     { id: "delivery_notes.delete", label: "Hapus Surat Jalan" },
+    { id: "delivery_notes.print", label: "Print Surat Jalan" },
     { id: "delivery_notes.update_status", label: "Ubah Status Surat Jalan" },
   ],
   "Retur": [
     { id: "returns.view", label: "Lihat Retur" },
     { id: "returns.create", label: "Buat Retur" },
     { id: "returns.delete", label: "Hapus Retur" },
+    { id: "returns.print", label: "Print Retur" },
   ],
   "Klien": [
     { id: "clients.view", label: "Lihat Klien" },

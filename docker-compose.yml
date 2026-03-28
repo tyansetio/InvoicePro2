@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=invoicepro
+      - POSTGRES_PASSWORD=1234
+      - POSTGRES_DB=invoice_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U invoicepro -d invoice_db" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=postgresql://invoicepro:1234@db:5432/invoice_db
+      - SESSION_SECRET=change_me_in_production
+      - NODE_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

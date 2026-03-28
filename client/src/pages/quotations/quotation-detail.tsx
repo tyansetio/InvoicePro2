@@ -121,6 +121,12 @@ export default function QuotationDetailPage({
     queryKey: ['/api/user'],
   });
 
+  // Fetch store details (name, address, tagline, etc.)
+  const { data: currentStore } = useQuery<any>({
+    queryKey: [`/api/stores/${currentStoreId}`],
+    enabled: !!currentStoreId,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       return apiRequest('DELETE', `/api/quotations/${id}`, undefined);
@@ -298,11 +304,11 @@ export default function QuotationDetailPage({
             {/* Left column: Logo + Bill To */}
             <div className="print-header-left" style={{ flexDirection: 'column' }}>
               <div className="print-logo">
-                {currentUser?.logoUrl ? (
-                  <img src={currentUser.logoUrl} alt="Company Logo" className="print-logo-image" />
+                {currentStore?.logoUrl ? (
+                  <img src={currentStore.logoUrl} alt="Company Logo" className="print-logo-image" />
                 ) : (
                   <div className="print-logo-circle" style={{ borderColor: '#000' }}>
-                    {currentUser?.companyName?.substring(0, 2).toUpperCase() || 'CO'}
+                    {currentStore?.name?.substring(0, 2).toUpperCase() || 'CO'}
                   </div>
                 )}
               </div>
@@ -320,22 +326,22 @@ export default function QuotationDetailPage({
             
             {/* Center column: Company Info */}
             <div className="print-header-center">
-              <div className="print-company-name">{currentUser?.companyName || "YOUR COMPANY NAME"}</div>
-              {currentUser?.companyTagline && (
-                <div className="print-company-tagline">{currentUser.companyTagline}</div>
+              <div className="print-company-name">{currentStore?.name || "YOUR COMPANY NAME"}</div>
+              {currentStore?.tagline && (
+                <div className="print-company-tagline">{currentStore.tagline}</div>
               )}
               <div className="print-company-address">
-                {currentUser?.companyAddress || "Your Company Address"}
-                {currentUser?.companyPhone && (
+                {currentStore?.address || "Your Company Address"}
+                {currentStore?.phone && (
                   <>
                     <br />
-                    Phone: {currentUser.companyPhone}
+                    Phone: {currentStore.phone}
                   </>
                 )}
-                {currentUser?.companyEmail && (
+                {currentStore?.email && (
                   <>
-                    {currentUser?.companyPhone ? ' / ' : <br />}
-                    Email: {currentUser.companyEmail}
+                    {currentStore?.phone ? ' / ' : <br />}
+                    Email: {currentStore.email}
                   </>
                 )}
               </div>
