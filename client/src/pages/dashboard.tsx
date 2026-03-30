@@ -110,7 +110,7 @@ export default function Dashboard() {
             />
             
             <StatsCard
-              title="Total Profit"
+              title="Net Balance"
               value={data.totalRevenue - data.totalExpenses}
             />
           </>
