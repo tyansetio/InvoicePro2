@@ -7811,6 +7811,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  app.post(
+    "/api/stores/:storeId/cash-accounts",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const storeId = parseInt(req.params.storeId);
+        const validatedData = validateRequestBody(
+          insertCashAccountSchema,
+          req,
+          res,
+        );
+        if (!validatedData) return;
+
+        const newAccount = await storage.createCashAccount({
+          ...validatedData,
+          storeId,
+        });
+        res.status(201).json(newAccount);
+      } catch (error) {
+        console.error("Error creating cash account:", error);
+        res.status(500).json({ error: "Server error" });
+      }
+    },
+  );
+
   app.get("/api/cash-accounts", requireAuth, async (req, res) => {
     try {
       const storeId = req.user?.storeId || 1;
