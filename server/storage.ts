@@ -6156,9 +6156,10 @@ export class DatabaseStorage implements IStorage {
           THEN pb.initial_quantity::numeric * pb.capital_cost::numeric ELSE 0 END), 0) as purchases,
 
         -- Beginning inventory: for pre-period batches, add back deductions that occurred during
-        -- the period, using the same date semantics as COGS:
-        --   • Delivery-based: filtered by delivery_notes.delivery_date and status='delivered'
-        --   • Self-pickup (deliveryNoteItemId IS NULL): filtered by invoice issue_date
+        -- the period using exactly the same date semantics as COGS:
+        --   COGS uses: invoice.status='paid' AND invoice.issue_date in [startStr, endStr]
+        -- Delivery-based deductions: join via deliveryNoteItemId → delivery_note_items → delivery_notes → invoices
+        -- Self-pickup deductions (deliveryNoteItemId IS NULL): join directly via invoice_items → invoices
         COALESCE(SUM(CASE WHEN pb.purchase_date < ${startStr}
           THEN (
             pb.remaining_quantity::numeric +
@@ -6167,10 +6168,11 @@ export class DatabaseStorage implements IStorage {
               FROM invoice_item_batches iib
               JOIN delivery_note_items dni ON dni.id = iib.delivery_note_item_id
               JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
+              JOIN invoices inv ON inv.id = dn.invoice_id
               WHERE iib.batch_id = pb.id
-                AND dn.delivery_date >= ${startStr}
-                AND dn.delivery_date <= ${endStr}
-                AND dn.status = 'delivered'
+                AND inv.status = 'paid'
+                AND inv.issue_date >= ${startStr}
+                AND inv.issue_date <= ${endStr}
             ), 0) +
             COALESCE((
               SELECT SUM(iib2.quantity::numeric)
@@ -6179,9 +6181,9 @@ export class DatabaseStorage implements IStorage {
               JOIN invoices inv ON inv.id = ii.invoice_id
               WHERE iib2.batch_id = pb.id
                 AND iib2.delivery_note_item_id IS NULL
+                AND inv.status = 'paid'
                 AND inv.issue_date >= ${startStr}
                 AND inv.issue_date <= ${endStr}
-                AND inv.status NOT IN ('void', 'draft')
             ), 0)
           ) * pb.capital_cost::numeric
           ELSE 0 END), 0) as beginning_inventory
