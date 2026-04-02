@@ -6155,11 +6155,10 @@ export class DatabaseStorage implements IStorage {
         COALESCE(SUM(CASE WHEN pb.purchase_date >= ${startStr} AND pb.purchase_date <= ${endStr}
           THEN pb.initial_quantity::numeric * pb.capital_cost::numeric ELSE 0 END), 0) as purchases,
 
-        -- Beginning inventory: for pre-period batches, add back deductions that occurred during
-        -- the period using exactly the same date semantics as COGS:
-        --   COGS uses: invoice.status='paid' AND invoice.issue_date in [startStr, endStr]
-        -- Delivery-based deductions: join via deliveryNoteItemId → delivery_note_items → delivery_notes → invoices
-        -- Self-pickup deductions (deliveryNoteItemId IS NULL): join directly via invoice_items → invoices
+        -- Beginning inventory: for pre-period batches, reconstruct opening stock by adding back
+        -- all stock deductions that occurred during the period.
+        -- Delivery deductions: filtered by dn.delivery_date (when stock was recognised as sold)
+        -- Self-pickup deductions: filtered by invoice.issue_date (when payment/deduction occurred)
         COALESCE(SUM(CASE WHEN pb.purchase_date < ${startStr}
           THEN (
             pb.remaining_quantity::numeric +
@@ -6168,11 +6167,9 @@ export class DatabaseStorage implements IStorage {
               FROM invoice_item_batches iib
               JOIN delivery_note_items dni ON dni.id = iib.delivery_note_item_id
               JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
-              JOIN invoices inv ON inv.id = dn.invoice_id
               WHERE iib.batch_id = pb.id
-                AND inv.status = 'paid'
-                AND inv.issue_date >= ${startStr}
-                AND inv.issue_date <= ${endStr}
+                AND dn.delivery_date >= ${startStr}
+                AND dn.delivery_date <= ${endStr}
                 AND dn.status = 'delivered'
             ), 0) +
             COALESCE((
