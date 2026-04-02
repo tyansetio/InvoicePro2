@@ -6173,6 +6173,7 @@ export class DatabaseStorage implements IStorage {
                 AND inv.status = 'paid'
                 AND inv.issue_date >= ${startStr}
                 AND inv.issue_date <= ${endStr}
+                AND dn.status = 'delivered'
             ), 0) +
             COALESCE((
               SELECT SUM(iib2.quantity::numeric)
