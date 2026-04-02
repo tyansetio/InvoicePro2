@@ -3163,6 +3163,7 @@ export class DatabaseStorage implements IStorage {
           }
 
           if (remainingToAllocate > 0) {
+            // Oversell fallback: deduct from most-recent batch (may go negative)
             const anyBatch = await tx
               .select()
               .from(productBatches)
@@ -3178,6 +3179,19 @@ export class DatabaseStorage implements IStorage {
             if (anyBatch.length > 0) {
               const batch = anyBatch[0];
               const currentRemaining = parseFloat(batch.remainingQuantity.toString());
+              const capitalCost = parseFloat(batch.capitalCost?.toString() || '0');
+              totalCost += remainingToAllocate * capitalCost;
+
+              // Record this oversell deduction so reversal is exact
+              await tx.insert(invoiceItemBatches).values({
+                invoiceItemId: invItem.id,
+                batchId: batch.id,
+                deliveryNoteItemId: dnItem.id,
+                quantity: remainingToAllocate.toString(),
+                capitalCost: capitalCost.toString(),
+                createdAt: new Date()
+              });
+
               await tx
                 .update(productBatches)
                 .set({
@@ -3187,7 +3201,7 @@ export class DatabaseStorage implements IStorage {
                 .where(eq(productBatches.id, batch.id));
             } else {
               const today = new Date().toISOString().split('T')[0];
-              await tx.insert(productBatches).values({
+              const newBatch = await tx.insert(productBatches).values({
                 productId: stockProductId,
                 storeId: storeId,
                 batchNumber: `NEG-${stockProductId}-${today}`,
@@ -3197,7 +3211,19 @@ export class DatabaseStorage implements IStorage {
                 remainingQuantity: (-remainingToAllocate).toString(),
                 reservedQuantity: '0',
                 notes: 'Negative stock from overselling'
-              });
+              }).returning();
+
+              // Record this oversell deduction for the newly created negative batch
+              if (newBatch.length > 0) {
+                await tx.insert(invoiceItemBatches).values({
+                  invoiceItemId: invItem.id,
+                  batchId: newBatch[0].id,
+                  deliveryNoteItemId: dnItem.id,
+                  quantity: remainingToAllocate.toString(),
+                  capitalCost: '0',
+                  createdAt: new Date()
+                });
+              }
             }
           }
         }
@@ -6129,17 +6155,33 @@ export class DatabaseStorage implements IStorage {
         COALESCE(SUM(CASE WHEN pb.purchase_date >= ${startStr} AND pb.purchase_date <= ${endStr}
           THEN pb.initial_quantity::numeric * pb.capital_cost::numeric ELSE 0 END), 0) as purchases,
 
-        -- Beginning inventory: for pre-period batches, add back all deductions made during the period
-        -- This covers both delivery-based and self-pickup deductions recorded in invoice_item_batches
+        -- Beginning inventory: for pre-period batches, add back deductions that occurred during
+        -- the period, using the same date semantics as COGS:
+        --   • Delivery-based: filtered by delivery_notes.delivery_date and status='delivered'
+        --   • Self-pickup (deliveryNoteItemId IS NULL): filtered by invoice issue_date
         COALESCE(SUM(CASE WHEN pb.purchase_date < ${startStr}
           THEN (
             pb.remaining_quantity::numeric +
             COALESCE((
               SELECT SUM(iib.quantity::numeric)
               FROM invoice_item_batches iib
+              JOIN delivery_note_items dni ON dni.id = iib.delivery_note_item_id
+              JOIN delivery_notes dn ON dn.id = dni.delivery_note_id
               WHERE iib.batch_id = pb.id
-                AND iib.created_at >= ${startStr}::timestamp
-                AND iib.created_at < (${endStr}::date + INTERVAL '1 day')::timestamp
+                AND dn.delivery_date >= ${startStr}
+                AND dn.delivery_date <= ${endStr}
+                AND dn.status = 'delivered'
+            ), 0) +
+            COALESCE((
+              SELECT SUM(iib2.quantity::numeric)
+              FROM invoice_item_batches iib2
+              JOIN invoice_items ii ON ii.id = iib2.invoice_item_id
+              JOIN invoices inv ON inv.id = ii.invoice_id
+              WHERE iib2.batch_id = pb.id
+                AND iib2.delivery_note_item_id IS NULL
+                AND inv.issue_date >= ${startStr}
+                AND inv.issue_date <= ${endStr}
+                AND inv.status NOT IN ('void', 'draft')
             ), 0)
           ) * pb.capital_cost::numeric
           ELSE 0 END), 0) as beginning_inventory
