@@ -3136,10 +3136,11 @@ export class DatabaseStorage implements IStorage {
             const quantityFromBatch = Math.min(remainingToAllocate, remaining);
             totalCost += quantityFromBatch * capitalCost;
 
-            // Track which batch was used and its cost for this delivery
+            // Track which batch was used, its cost, and the specific DN item for exact reversal
             await tx.insert(invoiceItemBatches).values({
               invoiceItemId: invItem.id,
               batchId: batch.id,
+              deliveryNoteItemId: dnItem.id,
               quantity: quantityFromBatch.toString(),
               capitalCost: capitalCost.toString(),
               createdAt: new Date()
@@ -3395,69 +3396,105 @@ export class DatabaseStorage implements IStorage {
       }
 
       for (const dnItem of dnItems) {
-        const [invItem] = await transaction.select().from(invoiceItems).where(eq(invoiceItems.id, dnItem.invoiceItemId));
-        if (!invItem) continue;
+        // Try exact reversal first: look up invoiceItemBatches records linked to this DN item
+        const exactBatchRecords = await transaction
+          .select()
+          .from(invoiceItemBatches)
+          .where(eq(invoiceItemBatches.deliveryNoteItemId, dnItem.id));
 
-        const deliveredQty = parseFloat(dnItem.deliveredQuantity.toString());
+        if (exactBatchRecords.length > 0) {
+          // Exact reversal: restore each batch precisely to what was deducted
+          for (const record of exactBatchRecords) {
+            const qty = parseFloat(record.quantity.toString());
+            const [batch] = await transaction
+              .select()
+              .from(productBatches)
+              .where(eq(productBatches.id, record.batchId));
+            if (!batch) continue;
 
-        let baseDeliveredQty = deliveredQty;
-        if (invItem.baseQuantity && invItem.quantity) {
-          const ratio = parseFloat(invItem.baseQuantity.toString()) / parseFloat(invItem.quantity.toString());
-          baseDeliveredQty = deliveredQty * ratio;
-        }
-
-        const [product] = await transaction.select().from(products).where(eq(products.id, invItem.productId));
-
-        let stockItems: { productId: number; quantity: number }[] = [];
-        if (product && product.productType === 'bundle') {
-          const components = await transaction
-            .select()
-            .from(productBundleComponents)
-            .where(eq(productBundleComponents.bundleProductId, product.id));
-          for (const comp of components) {
-            stockItems.push({
-              productId: comp.componentProductId,
-              quantity: parseFloat(comp.quantity) * baseDeliveredQty
-            });
-          }
-        } else {
-          stockItems.push({ productId: invItem.productId, quantity: baseDeliveredQty });
-        }
-
-        for (const { productId: stockProductId, quantity: qtyToRestore } of stockItems) {
-          const batches = await transaction
-            .select()
-            .from(productBatches)
-            .where(
-              and(
-                eq(productBatches.productId, stockProductId),
-                eq(productBatches.storeId, invoice.storeId)
-              )
-            )
-            .orderBy(desc(productBatches.purchaseDate));
-
-          let remainingToRestore = qtyToRestore;
-
-          for (const batch of batches) {
-            if (remainingToRestore <= 0) break;
-
-            const totalQty = parseFloat(batch.initialQuantity.toString());
             const remainingQty = parseFloat(batch.remainingQuantity.toString());
             const reservedQty = parseFloat(batch.reservedQuantity?.toString() || '0');
 
-            const canRestore = Math.min(remainingToRestore, totalQty - remainingQty);
+            await transaction
+              .update(productBatches)
+              .set({
+                remainingQuantity: (remainingQty + qty).toString(),
+                reservedQuantity: (reservedQty + qty).toString(),
+                updatedAt: new Date()
+              })
+              .where(eq(productBatches.id, record.batchId));
+          }
 
-            if (canRestore > 0) {
-              await transaction
-                .update(productBatches)
-                .set({
-                  remainingQuantity: (remainingQty + canRestore).toString(),
-                  reservedQuantity: (reservedQty + canRestore).toString(),
-                  updatedAt: new Date()
-                })
-                .where(eq(productBatches.id, batch.id));
+          // Delete the batch usage records for this DN item
+          await transaction
+            .delete(invoiceItemBatches)
+            .where(eq(invoiceItemBatches.deliveryNoteItemId, dnItem.id));
+        } else {
+          // Legacy fallback: heuristic reverse-FIFO (for records created before deliveryNoteItemId was added)
+          const [invItem] = await transaction.select().from(invoiceItems).where(eq(invoiceItems.id, dnItem.invoiceItemId));
+          if (!invItem) continue;
 
-              remainingToRestore -= canRestore;
+          const deliveredQty = parseFloat(dnItem.deliveredQuantity.toString());
+
+          let baseDeliveredQty = deliveredQty;
+          if (invItem.baseQuantity && invItem.quantity) {
+            const ratio = parseFloat(invItem.baseQuantity.toString()) / parseFloat(invItem.quantity.toString());
+            baseDeliveredQty = deliveredQty * ratio;
+          }
+
+          const [product] = await transaction.select().from(products).where(eq(products.id, invItem.productId));
+
+          let stockItems: { productId: number; quantity: number }[] = [];
+          if (product && product.productType === 'bundle') {
+            const components = await transaction
+              .select()
+              .from(productBundleComponents)
+              .where(eq(productBundleComponents.bundleProductId, product.id));
+            for (const comp of components) {
+              stockItems.push({
+                productId: comp.componentProductId,
+                quantity: parseFloat(comp.quantity) * baseDeliveredQty
+              });
+            }
+          } else {
+            stockItems.push({ productId: invItem.productId, quantity: baseDeliveredQty });
+          }
+
+          for (const { productId: stockProductId, quantity: qtyToRestore } of stockItems) {
+            const batches = await transaction
+              .select()
+              .from(productBatches)
+              .where(
+                and(
+                  eq(productBatches.productId, stockProductId),
+                  eq(productBatches.storeId, invoice.storeId)
+                )
+              )
+              .orderBy(desc(productBatches.purchaseDate));
+
+            let remainingToRestore = qtyToRestore;
+
+            for (const batch of batches) {
+              if (remainingToRestore <= 0) break;
+
+              const totalQty = parseFloat(batch.initialQuantity.toString());
+              const remainingQty = parseFloat(batch.remainingQuantity.toString());
+              const reservedQty = parseFloat(batch.reservedQuantity?.toString() || '0');
+
+              const canRestore = Math.min(remainingToRestore, totalQty - remainingQty);
+
+              if (canRestore > 0) {
+                await transaction
+                  .update(productBatches)
+                  .set({
+                    remainingQuantity: (remainingQty + canRestore).toString(),
+                    reservedQuantity: (reservedQty + canRestore).toString(),
+                    updatedAt: new Date()
+                  })
+                  .where(eq(productBatches.id, batch.id));
+
+                remainingToRestore -= canRestore;
+              }
             }
           }
         }
@@ -6081,11 +6118,32 @@ export class DatabaseStorage implements IStorage {
     `);
 
     // Get inventory values
+    // Beginning inventory is reconstructed: current remaining of pre-period batches PLUS what was
+    // deducted from those batches during the period (via invoiceItemBatches linked to delivered DNs)
     const inventoryResult = await db.execute(sql`
-      SELECT 
-        COALESCE(SUM(CASE WHEN pb.purchase_date < ${startStr} THEN pb.remaining_quantity::numeric * pb.capital_cost::numeric ELSE 0 END), 0) as beginning_inventory,
+      SELECT
+        -- Ending inventory: current value of all remaining stock
         COALESCE(SUM(pb.remaining_quantity::numeric * pb.capital_cost::numeric), 0) as ending_inventory,
-        COALESCE(SUM(CASE WHEN pb.purchase_date >= ${startStr} AND pb.purchase_date <= ${endStr} THEN pb.initial_quantity::numeric * pb.capital_cost::numeric ELSE 0 END), 0) as purchases
+
+        -- Purchases in period: initial value of batches purchased during the period
+        COALESCE(SUM(CASE WHEN pb.purchase_date >= ${startStr} AND pb.purchase_date <= ${endStr}
+          THEN pb.initial_quantity::numeric * pb.capital_cost::numeric ELSE 0 END), 0) as purchases,
+
+        -- Beginning inventory: for pre-period batches, add back all deductions made during the period
+        -- This covers both delivery-based and self-pickup deductions recorded in invoice_item_batches
+        COALESCE(SUM(CASE WHEN pb.purchase_date < ${startStr}
+          THEN (
+            pb.remaining_quantity::numeric +
+            COALESCE((
+              SELECT SUM(iib.quantity::numeric)
+              FROM invoice_item_batches iib
+              WHERE iib.batch_id = pb.id
+                AND iib.created_at >= ${startStr}::timestamp
+                AND iib.created_at < (${endStr}::date + INTERVAL '1 day')::timestamp
+            ), 0)
+          ) * pb.capital_cost::numeric
+          ELSE 0 END), 0) as beginning_inventory
+
       FROM ${productBatches} pb
       WHERE pb.store_id = ${storeId}
     `);

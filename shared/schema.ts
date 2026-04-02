@@ -353,13 +353,15 @@ export const invoiceItemBatches = pgTable("invoice_item_batches", {
   id: serial("id").primaryKey(),
   invoiceItemId: integer("invoice_item_id").references(() => invoiceItems.id, { onDelete: 'cascade' }).notNull(),
   batchId: integer("batch_id").references(() => productBatches.id).notNull(),
+  deliveryNoteItemId: integer("delivery_note_item_id").references(() => deliveryNoteItems.id, { onDelete: 'set null' }),
   quantity: numeric("quantity", { precision: 15, scale: 2 }).notNull(),
   capitalCost: numeric("capital_cost", { precision: 15, scale: 2 }).notNull(), // Historical capital cost at time of sale
   createdAt: timestamp("created_at").defaultNow().notNull()
 }, (table) => {
   return {
     invoiceItemIdIdx: index("invoice_item_batches_invoice_item_id_idx").on(table.invoiceItemId),
-    batchIdIdx: index("invoice_item_batches_batch_id_idx").on(table.batchId)
+    batchIdIdx: index("invoice_item_batches_batch_id_idx").on(table.batchId),
+    deliveryNoteItemIdIdx: index("invoice_item_batches_dn_item_id_idx").on(table.deliveryNoteItemId)
   };
 });
 
